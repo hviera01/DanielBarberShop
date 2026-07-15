@@ -1,0 +1,479 @@
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:excel/excel.dart' as xls;
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'venta_model.dart';
+import 'numero_a_letras.dart';
+import '../../../core/utils/formato_moneda.dart';
+import '../../negocio/data/negocio_model.dart';
+
+class VentaExportService {
+  static const _colorMarca = PdfColor.fromInt(0xFFC62828);
+  static const _colorGrisTexto = PdfColor.fromInt(0xFF4B4F58);
+  static const _colorGrisClaro = PdfColor.fromInt(0xFFF2F3F7);
+  static const _colorBorde = PdfColor.fromInt(0xFFE0E2E8);
+
+  /// PDF formal en tamaño carta, pensado para descargar/compartir/archivar
+  /// (distinto al ticket térmico de 80mm que se usa para imprimir en punto
+  /// de venta).
+  Future<Uint8List> generarPdfDetalleVenta(VentaModel venta, NegocioModel negocio) async {
+    final doc = pw.Document();
+    pw.MemoryImage? logo;
+    if (negocio.logoColorBase64.isNotEmpty) {
+      try {
+        logo = pw.MemoryImage(base64Decode(negocio.logoColorBase64));
+      } catch (_) {
+        logo = null;
+      }
+    }
+    final formatoDia = DateFormat('dd/MM/yyyy');
+    final esCotizacion = venta.tipoDocumento == 'Cotizacion';
+
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.letter,
+        margin: const pw.EdgeInsets.fromLTRB(34, 30, 34, 30),
+        build: (context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              _encabezadoFormal(venta, negocio, logo),
+              pw.SizedBox(height: 18),
+              if (venta.estaAnulada) ...[
+                _bannerAnulado(venta),
+                pw.SizedBox(height: 14),
+              ],
+              _infoFormal(venta, formatoDia),
+              pw.SizedBox(height: 16),
+              _tablaItemsFormal(venta),
+              pw.SizedBox(height: 14),
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(child: _bloqueLetrasYPago(venta)),
+                  pw.SizedBox(width: 16),
+                  _bloqueTotales(venta),
+                ],
+              ),
+              pw.Spacer(),
+              _piePagina(venta, negocio, formatoDia, esCotizacion),
+            ],
+          );
+        },
+      ),
+    );
+    return doc.save();
+  }
+
+  pw.Widget _encabezadoFormal(VentaModel venta, NegocioModel negocio, pw.MemoryImage? logo) {
+    final esCotizacion = venta.tipoDocumento == 'Cotizacion';
+    return pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        if (logo != null) ...[
+          pw.Image(logo, height: 54, width: 54),
+          pw.SizedBox(width: 12),
+        ],
+        pw.Expanded(
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(negocio.nombre.isEmpty ? 'MI NEGOCIO' : negocio.nombre.toUpperCase(), style: pw.TextStyle(fontSize: 17, fontWeight: pw.FontWeight.bold, color: _colorMarca)),
+              if (negocio.eslogan.isNotEmpty) pw.Text(negocio.eslogan, style: pw.TextStyle(fontSize: 9, fontStyle: pw.FontStyle.italic, color: _colorGrisTexto)),
+              pw.SizedBox(height: 4),
+              if (negocio.direccion.isNotEmpty) pw.Text(negocio.direccion, style: const pw.TextStyle(fontSize: 8.5, color: _colorGrisTexto)),
+              pw.Text(
+                [
+                  if (negocio.rtn.isNotEmpty) 'RTN: ${negocio.rtn}',
+                  if (negocio.telefono.isNotEmpty) 'Tel: ${negocio.telefono}',
+                  if (negocio.correo.isNotEmpty) negocio.correo,
+                ].join('   ·   '),
+                style: const pw.TextStyle(fontSize: 8.5, color: _colorGrisTexto),
+              ),
+            ],
+          ),
+        ),
+        pw.Container(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: pw.BoxDecoration(color: _colorMarca, borderRadius: pw.BorderRadius.circular(8)),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.end,
+            children: [
+              pw.Text(esCotizacion ? 'COTIZACIÓN' : venta.tipoDocumento.toUpperCase(), style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+              pw.SizedBox(height: 2),
+              pw.Text('No. ${venta.numeroDocumento}', style: const pw.TextStyle(fontSize: 11, color: PdfColors.white)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _bannerAnulado(VentaModel venta) {
+    return pw.Container(
+      width: double.infinity,
+      padding: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: pw.BoxDecoration(color: const PdfColor.fromInt(0xFFFCE4E4), borderRadius: pw.BorderRadius.circular(8), border: pw.Border.all(color: _colorMarca, width: 1)),
+      child: pw.Text(
+        'DOCUMENTO ANULADO${venta.motivoAnulacion.isNotEmpty ? ' — ${venta.motivoAnulacion}' : ''}',
+        style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: _colorMarca),
+      ),
+    );
+  }
+
+  pw.Widget _celdaInfo(String etiqueta, String valor) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 5),
+      child: pw.RichText(
+        text: pw.TextSpan(
+          children: [
+            pw.TextSpan(text: '$etiqueta: ', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: _colorGrisTexto)),
+            pw.TextSpan(text: valor, style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  pw.Widget _infoFormal(VentaModel venta, DateFormat formatoDia) {
+    return pw.Container(
+      width: double.infinity,
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(color: _colorGrisClaro, borderRadius: pw.BorderRadius.circular(8)),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Expanded(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                _celdaInfo('Cliente', venta.nombreCliente.isEmpty ? 'CONSUMIDOR FINAL' : venta.nombreCliente),
+                _celdaInfo('Documento', venta.documentoCliente.isEmpty ? 'N/A' : venta.documentoCliente),
+                if (venta.oc.isNotEmpty) _celdaInfo('No. O/C exenta', venta.oc),
+                if (venta.regExonerado.isNotEmpty) _celdaInfo('Reg. exonerado', venta.regExonerado),
+                if (venta.regSag.isNotEmpty) _celdaInfo('Reg. SAG', venta.regSag),
+              ],
+            ),
+          ),
+          pw.SizedBox(width: 16),
+          pw.Expanded(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                _celdaInfo('Fecha', venta.fechaRegistro != null ? formatoDia.format(venta.fechaRegistro!) : '-'),
+                _celdaInfo('Atendido por', venta.usuarioRegistro),
+                _celdaInfo('Condición', venta.condicion == 'Credito' ? 'Crédito' : 'Contado'),
+                if (venta.condicion == 'Credito' && venta.fechaVencimiento != null) _celdaInfo('Vence', formatoDia.format(venta.fechaVencimiento!)),
+                if (venta.condicion != 'Credito' && venta.metodoPago.isNotEmpty && venta.metodoPago != 'N/A') _celdaInfo('Método de pago', venta.metodoPago),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _tablaItemsFormal(VentaModel venta) {
+    final estiloEncabezado = pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.white);
+    final estiloCelda = const pw.TextStyle(fontSize: 9);
+    return pw.TableHelper.fromTextArray(
+      headers: ['Cant.', 'Descripción', 'P. Unitario', 'Desc. %', 'Importe'],
+      data: venta.detalle.map((item) {
+        return [
+          _formatoCantidad(item.cantidad),
+          item.nombreProducto,
+          formatearMoneda(item.precioVenta),
+          item.descuentoPorcentaje > 0 ? '${_formatoCantidad(item.descuentoPorcentaje)}%' : '-',
+          formatearMoneda(item.subtotal),
+        ];
+      }).toList(),
+      headerStyle: estiloEncabezado,
+      headerDecoration: const pw.BoxDecoration(color: _colorMarca),
+      cellStyle: estiloCelda,
+      cellHeight: 22,
+      cellAlignments: {
+        0: pw.Alignment.center,
+        1: pw.Alignment.centerLeft,
+        2: pw.Alignment.centerRight,
+        3: pw.Alignment.center,
+        4: pw.Alignment.centerRight,
+      },
+      columnWidths: {
+        0: const pw.FlexColumnWidth(1),
+        1: const pw.FlexColumnWidth(4),
+        2: const pw.FlexColumnWidth(1.6),
+        3: const pw.FlexColumnWidth(1.2),
+        4: const pw.FlexColumnWidth(1.6),
+      },
+      border: pw.TableBorder.symmetric(inside: const pw.BorderSide(color: _colorBorde, width: 0.6)),
+      oddRowDecoration: const pw.BoxDecoration(color: _colorGrisClaro),
+    );
+  }
+
+  pw.Widget _bloqueLetrasYPago(VentaModel venta) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text('Son: ${convertirNumeroALetras(venta.totalAPagar)}', style: const pw.TextStyle(fontSize: 8.5, color: _colorGrisTexto)),
+        if (venta.condicion != 'Credito' && venta.tipoDocumento != 'Cotizacion') ...[
+          pw.SizedBox(height: 8),
+          if (venta.metodoPago == 'Efectivo') ...[
+            pw.Text('Efectivo recibido: ${formatearMoneda(venta.montoPago)}', style: const pw.TextStyle(fontSize: 9)),
+            pw.Text('Cambio: ${formatearMoneda(venta.montoCambio)}', style: const pw.TextStyle(fontSize: 9)),
+          ] else
+            pw.Text('Pago: ${venta.metodoPago}', style: const pw.TextStyle(fontSize: 9)),
+        ],
+      ],
+    );
+  }
+
+  pw.Widget _filaTotalFormal(String etiqueta, String valor, {bool destacado = false}) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 3),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(etiqueta, style: pw.TextStyle(fontSize: destacado ? 11 : 9, fontWeight: destacado ? pw.FontWeight.bold : pw.FontWeight.normal, color: destacado ? _colorMarca : _colorGrisTexto)),
+          pw.SizedBox(width: 20),
+          pw.Text(valor, style: pw.TextStyle(fontSize: destacado ? 11 : 9, fontWeight: destacado ? pw.FontWeight.bold : pw.FontWeight.normal, color: destacado ? _colorMarca : PdfColors.black)),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _bloqueTotales(VentaModel venta) {
+    return pw.Container(
+      width: 190,
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(color: _colorGrisClaro, borderRadius: pw.BorderRadius.circular(8)),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          _filaTotalFormal('Subtotal', formatearMoneda(venta.subtotal)),
+          if (venta.descuentoGlobal > 0) _filaTotalFormal('Descuento global', '${_formatoCantidad(venta.descuentoGlobal)}%'),
+          _filaTotalFormal('ISV (15%)', formatearMoneda(venta.impuesto)),
+          pw.Divider(color: _colorBorde, height: 10),
+          _filaTotalFormal('TOTAL', formatearMoneda(venta.totalAPagar), destacado: true),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _piePagina(VentaModel venta, NegocioModel negocio, DateFormat formatoDia, bool esCotizacion) {
+    final estiloFiscal = pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: _colorGrisTexto);
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Divider(color: _colorBorde),
+        if (!esCotizacion) ...[
+          // Datos fiscales de la factura: siempre se incluyen en documentos
+          // fiscales (Factura/Boleta/Venta Sin Facturar), nunca en cotizaciones.
+          pw.Text('CAI: ${negocio.cai.isEmpty ? 'N/D' : negocio.cai}', style: estiloFiscal),
+          pw.Text('Rango autorizado: ${negocio.rangoPrefijo}${negocio.rangoDesde} al ${negocio.rangoPrefijo}${negocio.rangoHasta}', style: estiloFiscal),
+          pw.Text('Fecha límite de emisión: ${negocio.fechaLimiteEmision != null ? formatoDia.format(negocio.fechaLimiteEmision!) : 'N/D'}', style: estiloFiscal),
+          pw.SizedBox(height: 6),
+          pw.Text('ORIGINAL: CLIENTE', style: estiloFiscal),
+          pw.Text('COPIA: OBLIGADO TRIBUTARIO EMISOR', style: estiloFiscal),
+          pw.SizedBox(height: 8),
+          pw.Center(
+            child: pw.Text('LA FACTURA ES BENEFICIO DE TODOS, ¡EXÍJALA!', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold, color: _colorMarca)),
+          ),
+          pw.SizedBox(height: 6),
+        ],
+        pw.Center(
+          child: pw.Text(
+            esCotizacion ? 'Documento no fiscal — solo de referencia' : '¡Gracias por su compra!',
+            style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: _colorGrisTexto),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<Uint8List> generarPdfFactura(VentaModel venta, NegocioModel negocio) async {
+    final doc = pw.Document();
+    pw.MemoryImage? logo;
+    if (negocio.logoBnBase64.isNotEmpty) {
+      try {
+        logo = pw.MemoryImage(base64Decode(negocio.logoBnBase64));
+      } catch (_) {
+        logo = null;
+      }
+    }
+
+    doc.addPage(_construirPaginaTicket(venta, negocio, logo, esCopia: false));
+    doc.addPage(_construirPaginaTicket(venta, negocio, logo, esCopia: true));
+    return doc.save();
+  }
+
+  pw.Page _construirPaginaTicket(VentaModel venta, NegocioModel negocio, pw.MemoryImage? logo, {required bool esCopia}) {
+    final formatoFecha = DateFormat('dd/MM/yyyy HH:mm');
+    final formatoDia = DateFormat('dd/MM/yyyy');
+    const fSmall = 7.5;
+    const fNormal = 8.0;
+
+    return pw.Page(
+      pageFormat: PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 10),
+      build: (context) {
+        return pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            if (logo != null) pw.Center(child: pw.Image(logo, height: 50)),
+            if (negocio.nombre.isNotEmpty)
+              pw.Center(child: pw.Text(negocio.nombre.toUpperCase(), style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold))),
+            if (negocio.eslogan.isNotEmpty)
+              pw.Center(child: pw.Text(negocio.eslogan, style: const pw.TextStyle(fontSize: 9))),
+            if (negocio.direccion.isNotEmpty)
+              pw.Center(child: pw.Text('Dirección: ${negocio.direccion}', style: const pw.TextStyle(fontSize: fSmall), textAlign: pw.TextAlign.center)),
+            if (negocio.rtn.isNotEmpty) pw.Center(child: pw.Text('RTN: ${negocio.rtn}', style: const pw.TextStyle(fontSize: fSmall))),
+            if (negocio.telefono.isNotEmpty) pw.Center(child: pw.Text('Tel: ${negocio.telefono}', style: const pw.TextStyle(fontSize: fSmall))),
+            if (negocio.correo.isNotEmpty) pw.Center(child: pw.Text('Email: ${negocio.correo}', style: const pw.TextStyle(fontSize: fSmall))),
+            if (negocio.cai.isNotEmpty) pw.Center(child: pw.Text('CAI: ${negocio.cai}', style: const pw.TextStyle(fontSize: fSmall))),
+            pw.SizedBox(height: 6),
+            _separador(),
+            pw.Text('${venta.tipoDocumento.toUpperCase()} ${negocio.rangoPrefijo}${venta.numeroDocumento}', style: pw.TextStyle(fontSize: fNormal, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Fecha: ${venta.fechaRegistro != null ? formatoFecha.format(venta.fechaRegistro!) : '-'}', style: const pw.TextStyle(fontSize: fNormal)),
+            pw.Text('Atendido por: ${venta.usuarioRegistro}', style: const pw.TextStyle(fontSize: fNormal)),
+            pw.Text('Condición: ${venta.condicion}', style: const pw.TextStyle(fontSize: fNormal)),
+            if (venta.condicion == 'Credito' && venta.fechaVencimiento != null)
+              pw.Text('Fecha de vencimiento: ${formatoDia.format(venta.fechaVencimiento!)}', style: const pw.TextStyle(fontSize: fNormal)),
+            _separador(),
+            pw.Text('Cliente: ${venta.nombreCliente.isEmpty ? 'CONSUMIDOR FINAL' : venta.nombreCliente}', style: const pw.TextStyle(fontSize: fNormal)),
+            pw.Text('ID/RTN Cliente: ${venta.documentoCliente.isEmpty ? 'N/A' : venta.documentoCliente}', style: const pw.TextStyle(fontSize: fNormal)),
+            if (venta.oc.isNotEmpty) pw.Text('No. O/C exenta: ${venta.oc}', style: const pw.TextStyle(fontSize: fNormal)),
+            if (venta.regExonerado.isNotEmpty) pw.Text('No. Reg de exonerado: ${venta.regExonerado}', style: const pw.TextStyle(fontSize: fNormal)),
+            if (venta.regSag.isNotEmpty) pw.Text('No. De reg de la SAG: ${venta.regSag}', style: const pw.TextStyle(fontSize: fNormal)),
+            _separador(),
+            pw.Text('CANT  DESCRIPCIÓN                 IMPORTE', style: pw.TextStyle(fontSize: fSmall, fontWeight: pw.FontWeight.bold)),
+            _separador(),
+            ...venta.detalle.map((item) => pw.Padding(
+                  padding: const pw.EdgeInsets.only(bottom: 3),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(item.nombreProducto, style: pw.TextStyle(fontSize: fSmall, fontWeight: pw.FontWeight.bold)),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            '${_formatoCantidad(item.cantidad)} x ${formatearMoneda(item.precioVenta)}${item.descuentoPorcentaje > 0 ? ' (-${_formatoCantidad(item.descuentoPorcentaje)}%)' : ''}',
+                            style: pw.TextStyle(fontSize: fSmall, fontWeight: pw.FontWeight.bold),
+                          ),
+                          pw.Text(formatearMoneda(item.subtotal), style: pw.TextStyle(fontSize: fSmall, fontWeight: pw.FontWeight.bold)),
+                        ],
+                      ),
+                    ],
+                  ),
+                )),
+            _separador(),
+            _filaTotal('SUBTOTAL:', venta.subtotal),
+            if (venta.descuentoGlobal > 0) pw.Text('Descuento global: ${_formatoCantidad(venta.descuentoGlobal)}%', style: const pw.TextStyle(fontSize: fSmall)),
+            _filaTotal('Importe Exento:', 0),
+            _filaTotal('Importe Exonerado:', 0),
+            _filaTotal('Gravado 15%:', venta.subtotal),
+            _filaTotal('Gravado 18%:', 0),
+            _filaTotal('ISV 15%:', venta.impuesto),
+            _filaTotal('TOTAL A PAGAR:', venta.totalAPagar, negrita: true),
+            pw.SizedBox(height: 6),
+            _separador(),
+            pw.Text('Son: ${convertirNumeroALetras(venta.totalAPagar)}', style: const pw.TextStyle(fontSize: fNormal)),
+            if (venta.condicion != 'Credito') ...[
+              if (venta.metodoPago == 'Efectivo') ...[
+                pw.Text('Efectivo: ${formatearMoneda(venta.montoPago)}', style: const pw.TextStyle(fontSize: fNormal)),
+                pw.Text('Cambio: ${formatearMoneda(venta.montoCambio)}', style: const pw.TextStyle(fontSize: fNormal)),
+              ] else if (venta.metodoPago == 'Tarjeta')
+                pw.Text('Pago con tarjeta: ${formatearMoneda(venta.totalAPagar)}', style: const pw.TextStyle(fontSize: fNormal))
+              else if (venta.metodoPago == 'Transferencia')
+                pw.Text('Transferencia', style: const pw.TextStyle(fontSize: fNormal)),
+            ],
+            _separador(),
+            if (negocio.rangoPrefijo.isNotEmpty || negocio.rangoDesde.isNotEmpty)
+              pw.Text('Rango Aut.: ${negocio.rangoPrefijo}${negocio.rangoDesde} al ${negocio.rangoPrefijo}${negocio.rangoHasta}', style: const pw.TextStyle(fontSize: fSmall)),
+            if (negocio.fechaLimiteEmision != null)
+              pw.Text('Fecha Límite: ${formatoDia.format(negocio.fechaLimiteEmision!)}', style: const pw.TextStyle(fontSize: fSmall)),
+            pw.SizedBox(height: 4),
+            pw.Text('ORIGINAL: CLIENTE', style: const pw.TextStyle(fontSize: fSmall)),
+            pw.Text('COPIA: OBLIGADO TRIBUTARIO EMISOR', style: const pw.TextStyle(fontSize: fSmall)),
+            pw.SizedBox(height: 8),
+            pw.Center(
+              child: pw.Text(
+                'LA FACTURA ES BENEFICIO DE TODOS, ¡EXÍJALA!',
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(fontSize: fSmall, fontWeight: pw.FontWeight.bold),
+              ),
+            ),
+            pw.SizedBox(height: 6),
+            pw.Text('¡GRACIAS POR SU COMPRA!', style: pw.TextStyle(fontSize: fNormal, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 10),
+            pw.Align(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Text(esCopia ? 'COPIA' : 'ORIGINAL', style: pw.TextStyle(fontSize: fNormal, fontWeight: pw.FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  pw.Widget _separador() {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 3),
+      child: pw.Divider(thickness: 0.7),
+    );
+  }
+
+  pw.Widget _filaTotal(String etiqueta, double valor, {bool negrita = false}) {
+    final estilo = pw.TextStyle(fontSize: 8, fontWeight: negrita ? pw.FontWeight.bold : pw.FontWeight.normal);
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 1),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(etiqueta, style: estilo),
+          pw.Text(formatearMoneda(valor), style: estilo),
+        ],
+      ),
+    );
+  }
+
+  String _formatoCantidad(double cantidad) {
+    if (cantidad == cantidad.roundToDouble()) return cantidad.toInt().toString();
+    return cantidad.toStringAsFixed(2);
+  }
+
+  Uint8List generarExcel(List<VentaModel> lista) {
+    final formato = DateFormat('dd/MM/yyyy');
+    final libro = xls.Excel.createExcel();
+    final hoja = libro['Ventas'];
+    libro.delete('Sheet1');
+
+    hoja.appendRow([
+      xls.TextCellValue('Fecha'),
+      xls.TextCellValue('Tipo Documento'),
+      xls.TextCellValue('No. Documento'),
+      xls.TextCellValue('Cliente'),
+      xls.TextCellValue('Total'),
+      xls.TextCellValue('Método de Pago'),
+      xls.TextCellValue('Condición'),
+      xls.TextCellValue('Usuario'),
+    ]);
+
+    for (final v in lista) {
+      hoja.appendRow([
+        xls.TextCellValue(v.fechaRegistro != null ? formato.format(v.fechaRegistro!) : '-'),
+        xls.TextCellValue(v.tipoDocumento),
+        xls.TextCellValue(v.numeroDocumento),
+        xls.TextCellValue(v.nombreCliente),
+        xls.TextCellValue(formatearMoneda(v.totalAPagar)),
+        xls.TextCellValue(v.metodoPago),
+        xls.TextCellValue(v.condicion),
+        xls.TextCellValue(v.usuarioRegistro),
+      ]);
+    }
+
+    final bytes = libro.save();
+    return Uint8List.fromList(bytes ?? []);
+  }
+}

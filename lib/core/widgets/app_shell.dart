@@ -78,77 +78,98 @@ class _AppShellState extends ConsumerState<AppShell> {
     );
   }
 
-  Widget _barraSuperior(dynamic usuario) {
-    return Container(
+ Widget _barraSuperior(dynamic usuario) {
+    return SizedBox(
+      width: double.infinity,
       height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: const BoxDecoration(
-        color: Color(0xFFC62828),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.menu, color: Colors.white),
-            onPressed: () => setState(() => _menuAbierto = !_menuAbierto),
-          ),
-          const SizedBox(width: 4),
-          Container(
-            width: 36,
-            height: 36,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white,
-            ),
-            child: ClipOval(
-              child: Padding(
-                padding: const EdgeInsets.all(3),
-                child: Image.asset('assets/images/logo.jpg', fit: BoxFit.cover),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            'SUPERCOLOR',
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1,
-            ),
-          ),
-          const Spacer(),
-          if (usuario != null) ...[
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: Colors.white.withOpacity(0.2),
-              child: Text(
-                usuario.nombreCompleto.isNotEmpty ? usuario.nombreCompleto[0].toUpperCase() : '?',
-                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: const BoxDecoration(color: Color(0xFFC62828)),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final esAngosto = constraints.maxWidth < 420;
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  usuario.nombreCompleto,
-                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                Expanded(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.menu, color: Colors.white),
+                        onPressed: () => setState(() => _menuAbierto = !_menuAbierto),
+                      ),
+                      const SizedBox(width: 4),
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                        child: ClipOval(
+                          child: Padding(
+                            padding: const EdgeInsets.all(3),
+                            child: Image.asset('assets/images/logo.jpg', fit: BoxFit.cover),
+                          ),
+                        ),
+                      ),
+                      if (!esAngosto) ...[
+                        const SizedBox(width: 12),
+                        Text(
+                          'SUPERCOLOR',
+                          style: GoogleFonts.poppins(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 1),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-                Text(
-                  usuario.rol,
-                  style: GoogleFonts.poppins(color: Colors.white.withOpacity(0.75), fontSize: 11),
-                ),
+                if (usuario != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircleAvatar(
+                        radius: 16,
+                        backgroundColor: Colors.white.withOpacity(0.2),
+                        child: Text(
+                          usuario.nombreCompleto.isNotEmpty ? usuario.nombreCompleto[0].toUpperCase() : '?',
+                          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      if (!esAngosto) ...[
+                        const SizedBox(width: 10),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 160),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                usuario.nombreCompleto,
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                style: GoogleFonts.poppins(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                usuario.rol,
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                style: GoogleFonts.poppins(color: Colors.white.withOpacity(0.75), fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.logout, color: Colors.white, size: 20),
+                        tooltip: 'Cerrar sesión',
+                        onPressed: () => ref.read(authProvider.notifier).logout(),
+                      ),
+                    ],
+                  ),
               ],
-            ),
-            const SizedBox(width: 16),
-            IconButton(
-              icon: const Icon(Icons.logout, color: Colors.white, size: 20),
-              tooltip: 'Cerrar sesión',
-              onPressed: () => ref.read(authProvider.notifier).logout(),
-            ),
-          ],
-        ],
+            );
+          },
+        ),
       ),
     );
   }

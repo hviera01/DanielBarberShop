@@ -1,0 +1,90 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'item_venta_model.dart';
+
+class VentaModel {
+  final String id;
+  final String tipoDocumento;
+  final String numeroDocumento;
+  final String documentoCliente;
+  final String nombreCliente;
+  final String metodoPago;
+  final double montoPago;
+  final double montoCambio;
+  final double subtotal;
+  final double impuesto;
+  final double totalAPagar;
+  final String condicion;
+  final DateTime? fechaVencimiento;
+  final DateTime? fechaRegistro;
+  final String estado;
+  final String usuarioRegistro;
+  final double cantidadProductos;
+  final String oc;
+  final String regExonerado;
+  final String regSag;
+  final double descuentoGlobal;
+  final List<ItemVentaModel> detalle;
+  final String usuarioAnulacion;
+  final String motivoAnulacion;
+  final DateTime? fechaAnulacion;
+
+  bool get estaAnulada => estado == 'Anulada';
+
+  VentaModel({
+    required this.id,
+    required this.tipoDocumento,
+    required this.numeroDocumento,
+    required this.documentoCliente,
+    required this.nombreCliente,
+    required this.metodoPago,
+    required this.montoPago,
+    required this.montoCambio,
+    required this.subtotal,
+    required this.impuesto,
+    required this.totalAPagar,
+    required this.condicion,
+    required this.fechaVencimiento,
+    required this.fechaRegistro,
+    required this.estado,
+    required this.usuarioRegistro,
+    required this.cantidadProductos,
+    required this.oc,
+    required this.regExonerado,
+    required this.regSag,
+    this.descuentoGlobal = 0,
+    required this.detalle,
+    this.usuarioAnulacion = '',
+    this.motivoAnulacion = '',
+    this.fechaAnulacion,
+  });
+
+  factory VentaModel.fromMap(String id, Map<String, dynamic> data, List<ItemVentaModel> detalle) {
+    return VentaModel(
+      id: id,
+      tipoDocumento: data['tipoDocumento'] ?? '',
+      numeroDocumento: data['numeroDocumento'] ?? '',
+      documentoCliente: data['documentoCliente'] ?? '',
+      nombreCliente: data['nombreCliente'] ?? '',
+      metodoPago: data['metodoPago'] ?? '',
+      montoPago: (data['montoPago'] ?? 0).toDouble(),
+      montoCambio: (data['montoCambio'] ?? 0).toDouble(),
+      subtotal: (data['subtotal'] ?? 0).toDouble(),
+      impuesto: (data['impuesto'] ?? 0).toDouble(),
+      totalAPagar: (data['totalAPagar'] ?? 0).toDouble(),
+      condicion: data['condicion'] ?? '',
+      fechaVencimiento: (data['fechaVencimiento'] as Timestamp?)?.toDate(),
+      fechaRegistro: (data['fechaRegistro'] as Timestamp?)?.toDate(),
+      estado: data['estado'] ?? 'Activa',
+      usuarioRegistro: data['usuarioRegistro'] ?? '',
+      cantidadProductos: (data['cantidadProductos'] ?? 0).toDouble(),
+      oc: data['oc'] ?? '',
+      regExonerado: data['regExonerado'] ?? '',
+      regSag: data['regSag'] ?? '',
+      descuentoGlobal: (data['descuentoGlobal'] ?? 0).toDouble(),
+      detalle: detalle,
+      usuarioAnulacion: data['usuarioAnulacion'] ?? '',
+      motivoAnulacion: data['motivoAnulacion'] ?? '',
+      fechaAnulacion: (data['fechaAnulacion'] as Timestamp?)?.toDate(),
+    );
+  }
+}

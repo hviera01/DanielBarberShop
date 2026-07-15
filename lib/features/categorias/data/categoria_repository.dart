@@ -23,7 +23,7 @@ class CategoriaRepository {
   }
 
   Future<void> actualizar(String id, String descripcion, bool estado) async {
-    final existe = await _col.where('descripcion', isEqualTo: descripcion).get();
+    final existe = await _col.where('descripcion', isEqualTo: descripcion).limit(2).get();
     final duplicado = existe.docs.any((d) => d.id != id);
     if (duplicado) {
       throw Exception('Ya existe una categoría con esa descripción');

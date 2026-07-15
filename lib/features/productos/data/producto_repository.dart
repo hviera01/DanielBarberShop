@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'producto_model.dart';
 import 'historial_stock_model.dart';
+import 'historial_precio_compra_model.dart';
+import 'historial_venta_producto_model.dart';
 
 class ProductoRepository {
   final _col = FirebaseFirestore.instance.collection('productos');
@@ -68,7 +70,7 @@ class ProductoRepository {
     required bool estado,
   }) async {
     final codigoFinal = codigo.trim().isEmpty ? _generarCodigo() : codigo.trim();
-    final existe = await _col.where('codigo', isEqualTo: codigoFinal).get();
+    final existe = await _col.where('codigo', isEqualTo: codigoFinal).limit(2).get();
     final duplicado = existe.docs.any((d) => d.id != id);
     if (duplicado) {
       throw Exception('Ya existe un producto con ese código');
@@ -111,9 +113,54 @@ class ProductoRepository {
     await batch.commit();
   }
 
+  /// Descuenta stock de un producto de forma atómica (lee el stock actual y lo decrementa),
+  /// registrando el movimiento en el historial. Usado para reembasados y ventas.
+  Future<bool> descontarStock({
+    required String id,
+    required double cantidad,
+    required String usuario,
+    required String motivo,
+  }) async {
+    try {
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final doc = await transaction.get(_col.doc(id));
+        final stockActual = ((doc.data()?['stock'] ?? 0) as num).toDouble();
+        final stockNuevo = stockActual - cantidad;
+        transaction.update(_col.doc(id), {'stock': stockNuevo});
+        final historialRef = _col.doc(id).collection('historial').doc();
+        transaction.set(historialRef, {
+          'stockAnterior': stockActual,
+          'stockNuevo': stockNuevo,
+          'usuario': usuario,
+          'motivo': motivo,
+          'fecha': FieldValue.serverTimestamp(),
+        });
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Stream<List<HistorialStockModel>> obtenerHistorialStock(String idProducto) {
     return _col.doc(idProducto).collection('historial').orderBy('fecha', descending: true).snapshots().map((snap) {
       return snap.docs.map((d) => HistorialStockModel.fromMap(d.id, d.data())).toList();
+    });
+  }
+
+  /// Historial de costos del producto, en el orden en que se fueron
+  /// registrando las compras que los generaron (más antiguo primero).
+  Stream<List<HistorialPrecioCompraModel>> obtenerHistorialPreciosCompra(String idProducto) {
+    return _col.doc(idProducto).collection('historialPreciosCompra').orderBy('fecha').snapshots().map((snap) {
+      return snap.docs.map((d) => HistorialPrecioCompraModel.fromMap(d.id, d.data())).toList();
+    });
+  }
+
+  /// Historial de ventas del producto, en el orden en que se fueron
+  /// registrando (más antiguo primero).
+  Stream<List<HistorialVentaProductoModel>> obtenerHistorialVentas(String idProducto) {
+    return _col.doc(idProducto).collection('historialVentas').orderBy('fecha').snapshots().map((snap) {
+      return snap.docs.map((d) => HistorialVentaProductoModel.fromMap(d.id, d.data())).toList();
     });
   }
 }

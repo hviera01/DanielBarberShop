@@ -170,11 +170,15 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
   Widget build(BuildContext context) {
     final editando = widget.producto != null;
     final categoriasAsync = ref.watch(categoriasStreamProvider);
+    final tamano = MediaQuery.of(context).size;
+    final esMovil = tamano.width < 540;
+    final anchoDialog = esMovil ? tamano.width - 48 : 480.0;
 
     return Dialog(
       backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(20),
       child: Container(
-        width: 480,
+        width: anchoDialog,
         constraints: const BoxConstraints(maxHeight: 640),
         decoration: BoxDecoration(
           color: Colors.white,

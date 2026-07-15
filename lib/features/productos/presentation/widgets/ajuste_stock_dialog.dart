@@ -63,10 +63,14 @@ class _AjusteStockDialogState extends ConsumerState<AjusteStockDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final tamano = MediaQuery.of(context).size;
+    final esMovil = tamano.width < 440;
+    final anchoDialog = esMovil ? tamano.width - 48 : 380.0;
     return Dialog(
       backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(20),
       child: Container(
-        width: 380,
+        width: anchoDialog,
         padding: const EdgeInsets.all(28),
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
         child: Column(

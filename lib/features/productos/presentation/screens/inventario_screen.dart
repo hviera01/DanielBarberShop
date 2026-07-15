@@ -3,14 +3,22 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../data/producto_model.dart';
+import '../../data/producto_export_service.dart';
 import '../../providers/productos_provider.dart';
 import '../../../categorias/providers/categorias_provider.dart';
 import '../../../../core/utils/texto_utils.dart';
 import '../../../../core/utils/formato_moneda.dart';
+import '../../../../core/utils/exportador.dart';
 import '../widgets/producto_form_dialog.dart';
 import '../widgets/ajuste_stock_dialog.dart';
 import '../widgets/historial_stock_dialog.dart';
 import '../widgets/historial_movimientos_dialog.dart';
+import '../../../../core/widgets/pdf_preview_dialog.dart';
+import '../widgets/ticket_opciones_dialog.dart';
+import 'package:printing/printing.dart';
+import '../../../negocio/data/negocio_model.dart';
+import '../../../negocio/providers/negocio_provider.dart';
+import '../../../negocio/presentation/widgets/acceso_especial.dart';
 
 class InventarioScreen extends ConsumerStatefulWidget {
   const InventarioScreen({super.key});
@@ -22,10 +30,16 @@ class InventarioScreen extends ConsumerStatefulWidget {
 class _InventarioScreenState extends ConsumerState<InventarioScreen> {
   final _busquedaController = TextEditingController();
   final _focusNode = FocusNode();
+  final _servicioExport = ProductoExportService();
   String? _filaSeleccionada;
   String? _columnaOrden;
   bool _ordenAscendente = false;
+  bool _precioConIsv = true;
   List<ProductoModel> _listaActual = [];
+
+  /// Precio de venta a mostrar según la vista elegida (con o sin ISV). El
+  /// precio guardado en el producto siempre incluye ISV.
+  double _precioMostrado(ProductoModel p) => _precioConIsv ? p.precioVenta : redondearMoneda(p.precioVenta / 1.15);
 
   @override
   void dispose() {
@@ -44,11 +58,18 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     setState(() => _filaSeleccionada = null);
   }
 
-  void _abrirFormulario([ProductoModel? producto]) {
+  Future<void> _abrirFormulario([ProductoModel? producto]) async {
+    if (producto != null) {
+      final autorizado = await verificarAccesoEspecial(context, ref, PermisosEspeciales.inventarioEditarProducto);
+      if (!autorizado || !mounted) return;
+    }
+    if (!mounted) return;
     showDialog(context: context, builder: (context) => ProductoFormDialog(producto: producto));
   }
 
-  void _abrirAjusteStock(ProductoModel producto) {
+  Future<void> _abrirAjusteStock(ProductoModel producto) async {
+    final autorizado = await verificarAccesoEspecial(context, ref, PermisosEspeciales.inventarioAjustarStock);
+    if (!autorizado || !mounted) return;
     showDialog(context: context, builder: (context) => AjusteStockDialog(producto: producto));
   }
 
@@ -58,6 +79,59 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
 
   void _abrirHistorialMovimientos(ProductoModel producto, String tipo) {
     showDialog(context: context, builder: (context) => HistorialMovimientosDialog(producto: producto, tipo: tipo));
+  }
+
+  Future<void> _exportarExcel(Map<String, String> mapaCategorias) async {
+    if (_listaActual.isEmpty) return;
+    final bytes = _servicioExport.generarExcel(_listaActual, mapaCategorias);
+    await guardarOCompartirArchivo(bytes, 'inventario.xlsx');
+  }
+
+  void _exportarPdf(Map<String, String> mapaCategorias) {
+    if (_listaActual.isEmpty) return;
+    showDialog(
+      context: context,
+      builder: (context) => PdfPreviewDialog(
+        titulo: 'Vista previa · Inventario',
+        nombreArchivo: 'inventario.pdf',
+        generarPdf: () => _servicioExport.generarPdfInventario(_listaActual, mapaCategorias),
+      ),
+    );
+  }
+
+  Future<void> _imprimirTicketGrid(Map<String, String> mapaCategorias) async {
+    if (_listaActual.isEmpty) return;
+    final campos = await showDialog<Set<String>>(context: context, builder: (context) => const TicketOpcionesDialog());
+    if (campos == null || !mounted) return;
+    final negocio = await ref.read(negocioStreamProvider.future);
+    if (!mounted) return;
+    final impresora = negocio.impresoraTermicaUrl.isEmpty ? null : Printer(url: negocio.impresoraTermicaUrl, name: negocio.impresoraTermicaNombre);
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) => PdfPreviewDialog(
+        titulo: 'Vista previa · Ticket',
+        nombreArchivo: 'ticket_inventario.pdf',
+        generarPdf: () => _servicioExport.generarPdfTicket(_listaActual, mapaCategorias, campos),
+        impresora: impresora,
+      ),
+    );
+  }
+
+  Future<void> _abrirCodigoBarras(ProductoModel producto) async {
+    final negocio = await ref.read(negocioStreamProvider.future);
+    if (!mounted) return;
+    final impresora = negocio.impresoraEtiquetasUrl.isEmpty ? null : Printer(url: negocio.impresoraEtiquetasUrl, name: negocio.impresoraEtiquetasNombre);
+    showDialog(
+      context: context,
+      builder: (context) => PdfPreviewDialog(
+        titulo: 'Código de barras · ${producto.nombre}',
+        nombreArchivo: 'codigo_${producto.codigo}.pdf',
+        generarPdf: () => _servicioExport.generarPdfCodigoBarras(producto),
+        impresora: impresora,
+      ),
+    );
   }
 
   void _alternarOrden(String columna) {
@@ -123,12 +197,20 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     return KeyEventResult.ignored;
   }
 
+  void _tomarFoco() {
+    if (!_focusNode.hasFocus) _focusNode.requestFocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     final productosAsync = ref.watch(productosStreamProvider);
     final categoriasAsync = ref.watch(categoriasStreamProvider);
     final busqueda = ref.watch(inventarioBusquedaProvider);
     final vista = ref.watch(inventarioVistaProvider);
+    final categoriasLista = categoriasAsync.value ?? <dynamic>[];
+    final Map<String, String> mapaCategorias = {
+      for (final c in categoriasLista) c.id as String: c.descripcion as String,
+    };
 
     return Container(
       color: const Color(0xFFF2F3F7),
@@ -137,58 +219,80 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
           final esMovil = constraints.maxWidth < 720;
           return Padding(
             padding: EdgeInsets.all(esMovil ? 14 : 26),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 12,
-                  runSpacing: 10,
-                  children: [
-                    Text('Inventario', style: GoogleFonts.poppins(fontSize: esMovil ? 19 : 22, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
-                    productosAsync.when(
-                      data: (productos) => Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(color: const Color(0xFFC62828).withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-                        child: Text('${productos.length} productos', style: GoogleFonts.poppins(fontSize: 11.5, fontWeight: FontWeight.w600, color: const Color(0xFFC62828))),
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 12,
+                    runSpacing: 10,
+                    children: [
+                      Text('Inventario', style: GoogleFonts.poppins(fontSize: esMovil ? 19 : 22, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
+                      productosAsync.when(
+                        data: (productos) {
+                          final valorCompra = productos.fold<double>(0, (s, p) => s + (p.stock * p.precioCompra));
+                          final valorVenta = productos.fold<double>(0, (s, p) => s + (p.stock * _precioMostrado(p)));
+                          return Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _badgeInfo('${productos.length} productos', const Color(0xFFC62828)),
+                              _badgeInfo('Valor compra ${formatearMoneda(valorCompra)}', const Color(0xFF3B82F6)),
+                              _badgeInfo('Valor venta (${_precioConIsv ? 'con' : 'sin'} ISV) ${formatearMoneda(valorVenta)}', const Color(0xFF16A34A)),
+                            ],
+                          );
+                        },
+                        loading: () => const SizedBox(),
+                        error: (e, st) => const SizedBox(),
                       ),
-                      loading: () => const SizedBox(),
-                      error: (e, st) => const SizedBox(),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    SizedBox(width: esMovil ? constraints.maxWidth : 220, child: _selectorVista(vista)),
-                    SizedBox(width: esMovil ? constraints.maxWidth : 340, child: _buscador(busqueda)),
-                    OutlinedButton.icon(
-                      onPressed: () => ref.invalidate(productosStreamProvider),
-                      icon: const Icon(Icons.refresh, size: 18),
-                      label: Text('Refrescar', style: GoogleFonts.poppins(fontSize: 13)),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF1A1A1A),
-                        side: const BorderSide(color: Color(0xFFDCDFE6)),
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                SliverToBoxAdapter(child: const SizedBox(height: 16)),
+                SliverToBoxAdapter(
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      SizedBox(width: esMovil ? constraints.maxWidth : 220, child: _selectorVista(vista)),
+                      _selectorPrecioIsv(),
+                      SizedBox(width: esMovil ? constraints.maxWidth : 340, child: _buscador(busqueda)),
+                      OutlinedButton.icon(
+                        onPressed: () => ref.invalidate(productosStreamProvider),
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: Text('Refrescar', style: GoogleFonts.poppins(fontSize: 13)),
+                        style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFDCDFE6)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                       ),
-                    ),
-                    FilledButton.icon(
-                      onPressed: () => _abrirFormulario(),
-                      icon: const Icon(Icons.add, size: 18),
-                      label: Text('Nuevo Producto', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFFC62828),
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      OutlinedButton.icon(
+                        onPressed: () => _exportarExcel(mapaCategorias),
+                        icon: const Icon(Icons.grid_on_outlined, size: 18),
+                        label: Text('Excel', style: GoogleFonts.poppins(fontSize: 13)),
+                        style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFDCDFE6)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                       ),
-                    ),
-                  ],
+                      OutlinedButton.icon(
+                        onPressed: () => _exportarPdf(mapaCategorias),
+                        icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                        label: Text('PDF', style: GoogleFonts.poppins(fontSize: 13)),
+                        style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFDCDFE6)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _imprimirTicketGrid(mapaCategorias),
+                        icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                        label: Text('Ticket', style: GoogleFonts.poppins(fontSize: 13)),
+                        style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFDCDFE6)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                      ),
+                      FilledButton.icon(
+                        onPressed: () => _abrirFormulario(),
+                        icon: const Icon(Icons.add, size: 18),
+                        label: Text('Nuevo Producto', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+                        style: FilledButton.styleFrom(backgroundColor: const Color(0xFFC62828), padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 18),
-                Expanded(
+                SliverToBoxAdapter(child: const SizedBox(height: 18)),
+                SliverFillRemaining(
+                  hasScrollBody: true,
                   child: Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -198,14 +302,14 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                     ),
                     child: productosAsync.when(
                       data: (productos) {
-                        final categorias = categoriasAsync.value ?? [];
-                        final mapaCategorias = {for (final c in categorias) c.id: c.descripcion};
-
                         var lista = productos;
                         if (vista == 'bajo') {
                           lista = lista.where((p) => p.stock < 3).toList();
+                        }
+                        if (busqueda.isNotEmpty) {
+                          lista = lista.where((p) => coincideFuzzy(p.textoBusqueda, busqueda)).toList();
                         } else if (vista == 'filtrados') {
-                          lista = busqueda.isEmpty ? [] : lista.where((p) => coincideFuzzy(p.textoBusqueda, busqueda)).toList();
+                          lista = [];
                         }
                         lista = _ordenarLista(lista);
                         _listaActual = lista;
@@ -229,7 +333,6 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
 
                         return Focus(
                           focusNode: _focusNode,
-                          autofocus: true,
                           onKeyEvent: _manejarTeclado,
                           child: esMovil ? _tarjetas(lista, mapaCategorias) : _tabla(lista, mapaCategorias),
                         );
@@ -247,6 +350,14 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     );
   }
 
+  Widget _badgeInfo(String texto, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+      child: Text(texto, style: GoogleFonts.poppins(fontSize: 11.5, fontWeight: FontWeight.w600, color: color)),
+    );
+  }
+
   Widget _tabla(List<ProductoModel> lista, Map<String, String> mapaCategorias) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -258,11 +369,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
           children: [
             Container(
               height: 48,
-              decoration: BoxDecoration(
-                color: const Color(0xFFECEEF3),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
-              ),
+              decoration: BoxDecoration(color: const Color(0xFFECEEF3), borderRadius: const BorderRadius.vertical(top: Radius.circular(16)), border: Border(bottom: BorderSide(color: Colors.grey.shade300))),
               child: Row(
                 children: [
                   _celdaHeader(texto: 'CÓDIGO', flex: 12, columnaOrdenKey: 'codigo'),
@@ -270,7 +377,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                   if (mostrarDescripcion) _celdaHeader(texto: 'DESCRIPCIÓN', flex: 20),
                   if (mostrarCategoria) _celdaHeader(texto: 'CATEGORÍA', flex: 17),
                   _celdaHeader(texto: 'EXISTENCIA', flex: 12, columnaOrdenKey: 'existencia'),
-                  _celdaHeader(texto: 'P. VENTA', flex: 14, columnaOrdenKey: 'precioVenta'),
+                  _celdaHeader(texto: _precioConIsv ? 'P. VENTA (C/ISV)' : 'P. VENTA (S/ISV)', flex: 14, columnaOrdenKey: 'precioVenta'),
                   _celdaHeader(texto: 'P. COMPRA', flex: 14, columnaOrdenKey: 'precioCompra'),
                   _celdaHeader(texto: 'ESTADO', flex: 11),
                   _celdaHeaderAcciones(),
@@ -287,52 +394,22 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                   final seleccionada = _filaSeleccionada == producto.id;
 
                   return InkWell(
-                    onTap: () => setState(() => _filaSeleccionada = seleccionada ? null : producto.id),
+                    onTap: () {
+                      _tomarFoco();
+                      setState(() => _filaSeleccionada = seleccionada ? null : producto.id);
+                    },
                     child: Container(
-                      height: 72,
-                      color: seleccionada
-                          ? const Color(0xFFFBEAEA)
-                          : Colors.white,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          _celdaTabla(
-                            flex: 12,
-                            child: Text(producto.codigo, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 12.5, color: const Color(0xFF3F434A))),
-                          ),
-                          _celdaTabla(
-                            flex: 24,
-                            child: Text(
-                              producto.nombre,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.poppins(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF1A1A1A),
-                              ),
-                            ),
-                          ),
+                      color: seleccionada ? const Color(0xFFFBEAEA) : Colors.white,
+                      child: IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                          _celdaTabla(flex: 12, child: Text(producto.codigo, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 12.5, color: const Color(0xFF3F434A)))),
+                          _celdaTabla(flex: 24, child: Text(producto.nombre, softWrap: true, style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: FontWeight.w600, color: const Color(0xFF1A1A1A)))),
                           if (mostrarDescripcion)
-                            _celdaTabla(
-                              flex: 20,
-                              child: Text(
-                                producto.descripcion.isEmpty
-                                    ? '-'
-                                    : producto.descripcion,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                            ),
+                            _celdaTabla(flex: 20, child: Text(producto.descripcion.isEmpty ? '-' : producto.descripcion, softWrap: true, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600))),
                           if (mostrarCategoria)
-                            _celdaTabla(
-                              flex: 17,
-                              child: Text(mapaCategorias[producto.idCategoria] ?? '-', maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 12.5, color: const Color(0xFF3F434A))),
-                            ),
+                            _celdaTabla(flex: 17, child: Text(mapaCategorias[producto.idCategoria] ?? '-', maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 12.5, color: const Color(0xFF3F434A)))),
                           _celdaTabla(
                             flex: 12,
                             child: Align(
@@ -340,21 +417,12 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                 decoration: BoxDecoration(color: bajoStock ? const Color(0xFFFCE4E4) : const Color(0xFFEFF4FF), borderRadius: BorderRadius.circular(8)),
-                                child: Text(
-                                  producto.stock.toString(),
-                                  style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: FontWeight.w700, color: bajoStock ? const Color(0xFFC62828) : const Color(0xFF3B82F6)),
-                                ),
+                                child: Text(producto.stock.toString(), style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: FontWeight.w700, color: bajoStock ? const Color(0xFFC62828) : const Color(0xFF3B82F6))),
                               ),
                             ),
                           ),
-                          _celdaTabla(
-                            flex: 14,
-                            child: Text(formatearMoneda(producto.precioVenta), maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 12.5, color: const Color(0xFF3F434A))),
-                          ),
-                          _celdaTabla(
-                            flex: 14,
-                            child: Text(formatearMoneda(producto.precioCompra), maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 12.5, color: const Color(0xFF3F434A))),
-                          ),
+                          _celdaTabla(flex: 14, child: Text(formatearMoneda(_precioMostrado(producto)), maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 12.5, color: const Color(0xFF3F434A)))),
+                          _celdaTabla(flex: 14, child: Text(formatearMoneda(producto.precioCompra), maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 12.5, color: const Color(0xFF3F434A)))),
                           _celdaTabla(
                             flex: 11,
                             child: Align(
@@ -362,16 +430,13 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                                 decoration: BoxDecoration(color: producto.estado ? const Color(0xFFE8F8EE) : Colors.grey.shade200, borderRadius: BorderRadius.circular(8)),
-                                child: Text(
-                                  producto.estado ? 'Activo' : 'Inactivo',
-                                  maxLines: 1,
-                                  style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600, color: producto.estado ? const Color(0xFF16A34A) : Colors.grey.shade600),
-                                ),
+                                child: Text(producto.estado ? 'Activo' : 'Inactivo', maxLines: 1, style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600, color: producto.estado ? const Color(0xFF16A34A) : Colors.grey.shade600)),
                               ),
                             ),
                           ),
-                          _celdaAcciones(producto),
-                        ],
+                         _celdaAcciones(producto),
+                          ],
+                        ),
                       ),
                     ),
                   );
@@ -395,23 +460,20 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
         final seleccionada = _filaSeleccionada == p.id;
         return InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () => setState(() => _filaSeleccionada = seleccionada ? null : p.id),
+          onTap: () {
+            _tomarFoco();
+            setState(() => _filaSeleccionada = seleccionada ? null : p.id);
+          },
           child: Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: seleccionada ? const Color(0xFFFBEAEA) : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: seleccionada ? const Color(0xFFC62828) : const Color(0xFFE5E7EC)),
-            ),
+            decoration: BoxDecoration(color: seleccionada ? const Color(0xFFFBEAEA) : Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: seleccionada ? const Color(0xFFC62828) : const Color(0xFFE5E7EC))),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(p.nombre, style: GoogleFonts.poppins(fontSize: 14.5, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
-                    ),
+                    Expanded(child: Text(p.nombre, style: GoogleFonts.poppins(fontSize: 14.5, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A)))),
                     _celdaAccionesMovil(p),
                   ],
                 ),
@@ -443,7 +505,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                   spacing: 16,
                   runSpacing: 4,
                   children: [
-                    Text('Venta: ${formatearMoneda(p.precioVenta)}', style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                    Text('Venta (${_precioConIsv ? 'c/ISV' : 's/ISV'}): ${formatearMoneda(_precioMostrado(p))}', style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: FontWeight.w600)),
                     Text('Compra: ${formatearMoneda(p.precioCompra)}', style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade600)),
                   ],
                 ),
@@ -478,20 +540,11 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Flexible(
-                child: Text(
-                  texto,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.poppins(fontSize: 10.5, fontWeight: FontWeight.w700, color: activa ? const Color(0xFFC62828) : const Color(0xFF666A72), letterSpacing: 0.35),
-                ),
+                child: Text(texto, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 10.5, fontWeight: FontWeight.w700, color: activa ? const Color(0xFFC62828) : const Color(0xFF666A72), letterSpacing: 0.35)),
               ),
               if (columnaOrdenKey != null) ...[
                 const SizedBox(width: 4),
-                Icon(
-                  activa ? (_ordenAscendente ? Icons.arrow_upward : Icons.arrow_downward) : Icons.unfold_more,
-                  size: 13,
-                  color: activa ? const Color(0xFFC62828) : Colors.grey.shade400,
-                ),
+                Icon(activa ? (_ordenAscendente ? Icons.arrow_upward : Icons.arrow_downward) : Icons.unfold_more, size: 13, color: activa ? const Color(0xFFC62828) : Colors.grey.shade400),
               ],
             ],
           ),
@@ -501,75 +554,35 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
   }
 
   Widget _celdaHeaderAcciones() {
-    return Container(
-      width: 76,
-      height: double.infinity,
-      alignment: Alignment.center,
-      child: Text('ACCIONES', maxLines: 1, style: GoogleFonts.poppins(fontSize: 9.5, fontWeight: FontWeight.w700, color: const Color(0xFF666A72), letterSpacing: 0.25)),
-    );
+    return Container(width: 76, height: double.infinity, alignment: Alignment.center, child: Text('ACCIONES', maxLines: 1, style: GoogleFonts.poppins(fontSize: 9.5, fontWeight: FontWeight.w700, color: const Color(0xFF666A72), letterSpacing: 0.25)));
   }
 
-  Widget _celdaTabla({
-    required int flex,
-    required Widget child,
-  }) {
+  Widget _celdaTabla({required int flex, required Widget child}) {
     return Expanded(
       flex: flex,
       child: Container(
-        height: 72,
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 8,
-        ),
-        decoration: const BoxDecoration(
-          border: Border(
-            right: BorderSide(
-              color: Color(0xFFE5E7EC),
-              width: 1,
-            ),
-          ),
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: const BoxDecoration(border: Border(right: BorderSide(color: Color(0xFFE5E7EC), width: 1))),
         alignment: Alignment.centerLeft,
         child: child,
       ),
     );
   }
 
-    Widget _celdaAcciones(ProductoModel producto) {
-    return SizedBox(
+  Widget _celdaAcciones(ProductoModel producto) {
+    return Container(
       width: 76,
-      height: 72,
-      child: Center(
-        child: PopupMenuButton<String>(
-          tooltip: 'Más acciones',
-          padding: EdgeInsets.zero,
-          icon: Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(9),
-              border: Border.all(
-                color: const Color(0xFFDFE1E6),
-              ),
-            ),
-            child: const Icon(
-              Icons.more_vert,
-              size: 21,
-              color: Color(0xFF454950),
-            ),
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: 8,
-          onSelected: (valor) {
-            _manejarAccion(valor, producto);
-          },
-          itemBuilder: (context) {
-            return _opcionesMenu();
-          },
-        ),
+      height: double.infinity,
+      alignment: Alignment.center,
+      child: PopupMenuButton<String>(
+        tooltip: 'Más acciones',
+        padding: EdgeInsets.zero,
+        icon: Container(width: 34, height: 34, decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(9), border: Border.all(color: const Color(0xFFDFE1E6))), child: const Icon(Icons.more_vert, size: 21, color: Color(0xFF454950))),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: 8,
+        position: PopupMenuPosition.under,
+        onSelected: (valor) => _manejarAccion(valor, producto),
+        itemBuilder: (context) => _opcionesMenu(),
       ),
     );
   }
@@ -578,12 +591,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     return PopupMenuButton<String>(
       tooltip: 'Más acciones',
       padding: EdgeInsets.zero,
-      icon: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(9), border: Border.all(color: const Color(0xFFDFE1E6))),
-        child: const Icon(Icons.more_vert, size: 19, color: Color(0xFF454950)),
-      ),
+      icon: Container(width: 32, height: 32, decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(9), border: Border.all(color: const Color(0xFFDFE1E6))), child: const Icon(Icons.more_vert, size: 19, color: Color(0xFF454950))),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       elevation: 8,
       position: PopupMenuPosition.under,
@@ -609,6 +617,9 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
       case 'historial_compras':
         _abrirHistorialMovimientos(producto, 'compras');
         break;
+      case 'codigo_barras':
+        _abrirCodigoBarras(producto);
+        break;
     }
   }
 
@@ -620,6 +631,8 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
       _opcionMenu(valor: 'historial_stock', icono: Icons.history, texto: 'Historial de existencia'),
       _opcionMenu(valor: 'historial_ventas', icono: Icons.point_of_sale_outlined, texto: 'Historial de ventas'),
       _opcionMenu(valor: 'historial_compras', icono: Icons.shopping_cart_outlined, texto: 'Historial de compras'),
+      const PopupMenuDivider(),
+      _opcionMenu(valor: 'codigo_barras', icono: Icons.qr_code_2_outlined, texto: 'Código de barras'),
     ];
   }
 
@@ -627,13 +640,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     return PopupMenuItem<String>(
       value: valor,
       height: 44,
-      child: Row(
-        children: [
-          Icon(icono, size: 19, color: const Color(0xFF4B4F58)),
-          const SizedBox(width: 12),
-          Text(texto, style: GoogleFonts.poppins(fontSize: 12.5, color: const Color(0xFF25272B))),
-        ],
-      ),
+      child: Row(children: [Icon(icono, size: 19, color: const Color(0xFF4B4F58)), const SizedBox(width: 12), Text(texto, style: GoogleFonts.poppins(fontSize: 12.5, color: const Color(0xFF25272B)))]),
     );
   }
 
@@ -661,6 +668,41 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     );
   }
 
+  Widget _selectorPrecioIsv() {
+    Widget opcion(String texto, bool valor) {
+      final activo = _precioConIsv == valor;
+      return InkWell(
+        onTap: () => setState(() => _precioConIsv = valor),
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          decoration: BoxDecoration(
+            color: activo ? const Color(0xFFC62828) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            texto,
+            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: activo ? Colors.white : const Color(0xFF666A72)),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFDCDFE6))),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          opcion('Con ISV', true),
+          opcion('Sin ISV', false),
+        ],
+      ),
+    );
+  }
+
   Widget _buscador(String busqueda) {
     return Container(
       height: 46,
@@ -673,13 +715,9 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
           Expanded(
             child: TextField(
               controller: _busquedaController,
+              autofocus: true,
               style: GoogleFonts.poppins(fontSize: 13),
-              decoration: InputDecoration(
-                hintText: 'Buscar producto, código o código de barras...',
-                hintStyle: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade400),
-                border: InputBorder.none,
-                isDense: true,
-              ),
+              decoration: InputDecoration(hintText: 'Buscar o escanear código de barras...', hintStyle: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade400), border: InputBorder.none, isDense: true),
               onSubmitted: (_) => _buscar(),
             ),
           ),

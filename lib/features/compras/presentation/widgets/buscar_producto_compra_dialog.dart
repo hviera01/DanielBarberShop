@@ -1,0 +1,340 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../productos/data/producto_model.dart';
+import '../../../productos/providers/productos_provider.dart';
+import '../../../categorias/providers/categorias_provider.dart';
+import '../../../../core/utils/texto_utils.dart';
+import '../../../../core/utils/formato_moneda.dart';
+
+/// Buscador de productos para Compras: a diferencia del de Ventas no maneja
+/// niveles de precio de venta, sino el costo de compra registrado en el
+/// producto (que igual se puede editar después en la fila del carrito).
+class BuscarProductoCompraDialog extends ConsumerStatefulWidget {
+  const BuscarProductoCompraDialog({super.key});
+
+  @override
+  ConsumerState<BuscarProductoCompraDialog> createState() => _BuscarProductoCompraDialogState();
+}
+
+class _BuscarProductoCompraDialogState extends ConsumerState<BuscarProductoCompraDialog> {
+  final _busquedaController = TextEditingController();
+  final _focusNodeLista = FocusNode();
+  String _busqueda = '';
+  List<ProductoModel> _listaActual = [];
+  String? _filaSeleccionada;
+
+  @override
+  void dispose() {
+    _busquedaController.dispose();
+    _focusNodeLista.dispose();
+    super.dispose();
+  }
+
+  void _moverSeleccion(int delta) {
+    if (_listaActual.isEmpty) return;
+    final indiceActual = _filaSeleccionada == null ? -1 : _listaActual.indexWhere((p) => p.id == _filaSeleccionada);
+    var nuevoIndice = indiceActual + delta;
+    if (nuevoIndice < 0) nuevoIndice = 0;
+    if (nuevoIndice >= _listaActual.length) nuevoIndice = _listaActual.length - 1;
+    setState(() => _filaSeleccionada = _listaActual[nuevoIndice].id);
+  }
+
+  KeyEventResult _manejarTeclado(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent) {
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        _moverSeleccion(1);
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        _moverSeleccion(-1);
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+        _seleccionarAlPresionarEnter();
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _tomarFocoLista() {
+    if (!_focusNodeLista.hasFocus) _focusNodeLista.requestFocus();
+  }
+
+  void _confirmarSeleccion(ProductoModel producto) {
+    Navigator.pop(context, producto);
+  }
+
+  void _seleccionarAlPresionarEnter() {
+    if (_listaActual.isEmpty) return;
+    final resaltado = _listaActual.where((p) => p.id == _filaSeleccionada).toList();
+    _confirmarSeleccion(resaltado.isNotEmpty ? resaltado.first : _listaActual.first);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final productosAsync = ref.watch(productosStreamProvider);
+    final categoriasAsync = ref.watch(categoriasStreamProvider);
+    final categoriasLista = categoriasAsync.value ?? <dynamic>[];
+    final mapaCategorias = {for (final c in categoriasLista) c.id as String: c.descripcion as String};
+
+    final tamano = MediaQuery.of(context).size;
+    final esMovil = tamano.width < 720;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF2F3F7),
+      body: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.all(esMovil ? 14 : 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.pop(context)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text('Buscar Producto', style: GoogleFonts.poppins(fontSize: esMovil ? 18 : 21, fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Padding(
+                padding: EdgeInsets.only(left: esMovil ? 0 : 54),
+                child: Text(
+                  'Doble clic o Enter agrega el producto resaltado',
+                  style: GoogleFonts.poppins(fontSize: esMovil ? 11.5 : 12.5, color: Colors.grey.shade500),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: esMovil ? double.infinity : 400,
+                child: Container(
+                  height: 50,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFDCDFE6))),
+                  child: Row(
+                    children: [
+                      Icon(Icons.search, size: 20, color: Colors.grey.shade400),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: _busquedaController,
+                          autofocus: true,
+                          style: GoogleFonts.poppins(fontSize: 14),
+                          decoration: InputDecoration(
+                            hintText: 'Buscar por código, nombre o descripción...',
+                            hintStyle: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade400),
+                            border: InputBorder.none,
+                            isDense: true,
+                          ),
+                          onChanged: (v) => setState(() {
+                            _busqueda = v.trim();
+                            _filaSeleccionada = null;
+                          }),
+                          onSubmitted: (_) => _seleccionarAlPresionarEnter(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFE5E7EC)),
+                  ),
+                  child: Focus(
+                    focusNode: _focusNodeLista,
+                    onKeyEvent: _manejarTeclado,
+                    child: productosAsync.when(
+                      data: (productos) {
+                        if (_busqueda.isEmpty) {
+                          _listaActual = [];
+                          return Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.search, size: 48, color: Colors.grey.shade300),
+                                const SizedBox(height: 12),
+                                Text('Escribí algo para buscar un producto', style: GoogleFonts.poppins(color: Colors.grey.shade500)),
+                              ],
+                            ),
+                          );
+                        }
+
+                        final lista = productos.where((p) => p.estado && coincideFuzzy(p.textoBusqueda, _busqueda)).toList();
+                        _listaActual = lista;
+                        if (lista.isEmpty) {
+                          return Center(
+                            child: Text('No se encontraron productos', style: GoogleFonts.poppins(color: Colors.grey.shade500)),
+                          );
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (!esMovil) ...[
+                              _encabezadoTabla(),
+                              const SizedBox(height: 10),
+                              Divider(height: 1, color: Colors.grey.shade300),
+                            ],
+                            Expanded(
+                              child: ListView.separated(
+                                itemCount: lista.length,
+                                separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
+                                itemBuilder: (context, i) {
+                                  final p = lista[i];
+                                  return esMovil ? _tarjetaMovil(p, mapaCategorias) : _filaTabla(p, mapaCategorias);
+                                },
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                      loading: () => const Center(child: CircularProgressIndicator(color: Color(0xFFC62828))),
+                      error: (e, st) => Center(child: Text('Error: $e', style: GoogleFonts.poppins(color: Colors.red))),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _encabezadoTabla() {
+    final estilo = GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade600);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(flex: 2, child: Text('Código', style: estilo)),
+        Expanded(flex: 6, child: Text('Descripción', style: estilo)),
+        Expanded(flex: 3, child: Text('Categoría', style: estilo)),
+        Expanded(flex: 3, child: Text('Costo', textAlign: TextAlign.right, style: estilo)),
+        Expanded(flex: 2, child: Text('Existencia', textAlign: TextAlign.center, style: estilo)),
+      ],
+    );
+  }
+
+  Widget _filaTabla(ProductoModel p, Map<String, String> mapaCategorias) {
+    final seleccionada = _filaSeleccionada == p.id;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          _tomarFocoLista();
+          setState(() => _filaSeleccionada = p.id);
+        },
+        onDoubleTap: () => _confirmarSeleccion(p),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+          decoration: BoxDecoration(
+            color: seleccionada ? const Color(0xFFFBEAEA) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: seleccionada ? Border.all(color: const Color(0xFFC62828), width: 1.4) : Border.all(color: Colors.transparent, width: 1.4),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(flex: 2, child: Text(p.codigo, style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade600))),
+              Expanded(
+                flex: 6,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: Text(p.nombre, softWrap: true, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: Text(mapaCategorias[p.idCategoria] ?? '-', softWrap: true, style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade600)),
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: Text(formatearMoneda(p.precioCompra), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF2B6CB0))),
+              ),
+              Expanded(
+                flex: 2,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    decoration: BoxDecoration(color: const Color(0xFFF0FBF4), borderRadius: BorderRadius.circular(8)),
+                    child: Text(
+                      p.stock.toStringAsFixed(p.stock == p.stock.roundToDouble() ? 0 : 2),
+                      style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF1E9E5A)),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tarjetaMovil(ProductoModel p, Map<String, String> mapaCategorias) {
+    final seleccionada = _filaSeleccionada == p.id;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () {
+          _tomarFocoLista();
+          setState(() => _filaSeleccionada = p.id);
+        },
+        onDoubleTap: () => _confirmarSeleccion(p),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: seleccionada ? const Color(0xFFFBEAEA) : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+            border: seleccionada ? Border.all(color: const Color(0xFFC62828), width: 1.4) : Border.all(color: Colors.transparent, width: 1.4),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(p.nombre, softWrap: true, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 2),
+                        Text('${p.codigo} · ${mapaCategorias[p.idCategoria] ?? '-'}', softWrap: true, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade500)),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    decoration: BoxDecoration(color: const Color(0xFFF0FBF4), borderRadius: BorderRadius.circular(8)),
+                    child: Text(
+                      'Existencia: ${p.stock.toStringAsFixed(p.stock == p.stock.roundToDouble() ? 0 : 2)}',
+                      style: GoogleFonts.poppins(fontSize: 11.5, fontWeight: FontWeight.w600, color: const Color(0xFF1E9E5A)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(formatearMoneda(p.precioCompra), style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF2B6CB0))),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

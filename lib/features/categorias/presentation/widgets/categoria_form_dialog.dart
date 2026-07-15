@@ -93,10 +93,14 @@ class _CategoriaFormDialogState extends ConsumerState<CategoriaFormDialog> {
   @override
   Widget build(BuildContext context) {
     final editando = widget.categoria != null;
+    final tamano = MediaQuery.of(context).size;
+    final esMovil = tamano.width < 480;
+    final anchoDialog = esMovil ? tamano.width - 48 : 420.0;
     return Dialog(
       backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(20),
       child: Container(
-        width: 420,
+        width: anchoDialog,
         padding: const EdgeInsets.all(28),
         decoration: BoxDecoration(
           color: Colors.white,

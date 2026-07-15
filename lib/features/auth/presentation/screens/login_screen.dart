@@ -33,6 +33,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
+    final tamano = MediaQuery.of(context).size;
+    final anchoTarjeta = tamano.width < 480 ? tamano.width - 40 : 440.0;
 
     return Scaffold(
       body: Stack(
@@ -64,7 +66,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           Center(
             child: SingleChildScrollView(
               child: Container(
-                width: 440,
+                width: anchoTarjeta,
                 margin: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(32),
