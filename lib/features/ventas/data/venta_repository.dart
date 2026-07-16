@@ -59,7 +59,20 @@ class VentaRepository {
     final claveContador = _claveContador(tipoDocumento);
     final contadorRef = _colContadores.doc(claveContador);
     final ventaRef = _colVentas.doc();
-    final itemsADescontar = items.where((i) => !i.reembasado).toList();
+
+    // Categorías marcadas para no controlar existencia (servicios, pintura
+    // preparada, etc.): sus productos no bajan del inventario al venderse.
+    final idsCategoria = items.map((i) => i.idCategoria).where((id) => id.isNotEmpty).toSet();
+    final categoriasSinControlStock = <String>{};
+    if (idsCategoria.isNotEmpty) {
+      final snapsCategorias = await Future.wait(idsCategoria.map((id) => _db.collection('categorias').doc(id).get()));
+      for (final snap in snapsCategorias) {
+        if (snap.exists && (snap.data()?['controlaStock'] ?? true) == false) {
+          categoriasSinControlStock.add(snap.id);
+        }
+      }
+    }
+    final itemsADescontar = items.where((i) => !i.reembasado && !categoriasSinControlStock.contains(i.idCategoria)).toList();
 
     late String numeroDocumento;
 
@@ -247,7 +260,17 @@ class VentaRepository {
       }
     }
 
-    final itemsARestaurar = items.where((i) => !i.reembasado).toList();
+    final idsCategoriaRestaurar = items.map((i) => i.idCategoria).where((id) => id.isNotEmpty).toSet();
+    final categoriasSinControlStockRestaurar = <String>{};
+    if (idsCategoriaRestaurar.isNotEmpty) {
+      final snapsCategorias = await Future.wait(idsCategoriaRestaurar.map((id) => _db.collection('categorias').doc(id).get()));
+      for (final snap in snapsCategorias) {
+        if (snap.exists && (snap.data()?['controlaStock'] ?? true) == false) {
+          categoriasSinControlStockRestaurar.add(snap.id);
+        }
+      }
+    }
+    final itemsARestaurar = items.where((i) => !i.reembasado && !categoriasSinControlStockRestaurar.contains(i.idCategoria)).toList();
 
     await _db.runTransaction((transaction) async {
       final stocksActuales = <String, double>{};

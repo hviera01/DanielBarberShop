@@ -10,7 +10,7 @@ class CategoriaRepository {
     });
   }
 
-  Future<void> crear(String descripcion, bool estado) async {
+  Future<void> crear(String descripcion, bool estado, {bool controlaStock = true}) async {
     final existe = await _col.where('descripcion', isEqualTo: descripcion).limit(1).get();
     if (existe.docs.isNotEmpty) {
       throw Exception('Ya existe una categoría con esa descripción');
@@ -18,11 +18,12 @@ class CategoriaRepository {
     await _col.add({
       'descripcion': descripcion,
       'estado': estado,
+      'controlaStock': controlaStock,
       'fechaRegistro': FieldValue.serverTimestamp(),
     });
   }
 
-  Future<void> actualizar(String id, String descripcion, bool estado) async {
+  Future<void> actualizar(String id, String descripcion, bool estado, {bool controlaStock = true}) async {
     final existe = await _col.where('descripcion', isEqualTo: descripcion).limit(2).get();
     final duplicado = existe.docs.any((d) => d.id != id);
     if (duplicado) {
@@ -31,6 +32,7 @@ class CategoriaRepository {
     await _col.doc(id).update({
       'descripcion': descripcion,
       'estado': estado,
+      'controlaStock': controlaStock,
     });
   }
 

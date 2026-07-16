@@ -481,7 +481,7 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
 
   double _importeMostrado(dynamic item) {
     final precio = _precioMostrado(item);
-    return precio * (item.cantidad as double) * (1 - (item.descuentoPorcentaje as double) / 100);
+    return redondearMoneda(precio * (item.cantidad as double) * (1 - (item.descuentoPorcentaje as double) / 100));
   }
 
   Widget _tablaItems(VentaModel venta) {

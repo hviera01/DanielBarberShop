@@ -16,6 +16,7 @@ class CategoriaFormDialog extends ConsumerStatefulWidget {
 class _CategoriaFormDialogState extends ConsumerState<CategoriaFormDialog> {
   final _descripcionController = TextEditingController();
   bool _activo = true;
+  bool _controlaStock = true;
   bool _guardando = false;
   String? _error;
 
@@ -25,6 +26,7 @@ class _CategoriaFormDialogState extends ConsumerState<CategoriaFormDialog> {
     if (widget.categoria != null) {
       _descripcionController.text = widget.categoria!.descripcion;
       _activo = widget.categoria!.estado;
+      _controlaStock = widget.categoria!.controlaStock;
     }
   }
 
@@ -47,9 +49,9 @@ class _CategoriaFormDialogState extends ConsumerState<CategoriaFormDialog> {
     try {
       final repo = ref.read(categoriaRepositoryProvider);
       if (widget.categoria == null) {
-        await repo.crear(descripcion, _activo);
+        await repo.crear(descripcion, _activo, controlaStock: _controlaStock);
       } else {
-        await repo.actualizar(widget.categoria!.id, descripcion, _activo);
+        await repo.actualizar(widget.categoria!.id, descripcion, _activo, controlaStock: _controlaStock);
       }
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -172,6 +174,36 @@ class _CategoriaFormDialogState extends ConsumerState<CategoriaFormDialog> {
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F6FA),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Controla existencia',
+                      style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade700),
+                    ),
+                  ),
+                  Switch(
+                    value: _controlaStock,
+                    activeColor: const Color(0xFF16A34A),
+                    onChanged: (v) => setState(() => _controlaStock = v),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _controlaStock
+                  ? 'Al vender, se descuenta del inventario y se avisa si no hay existencia suficiente.'
+                  : 'No se descuenta del inventario ni se bloquea la venta por existencia 0. Usalo para servicios o productos preparados al momento (ej. pintura preparada).',
+              style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade500),
             ),
             if (_error != null) ...[
               const SizedBox(height: 14),

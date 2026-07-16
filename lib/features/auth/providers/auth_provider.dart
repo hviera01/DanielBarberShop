@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data/auth_repository.dart';
 import '../data/usuario_model.dart';
 import '../../../core/providers/tabs_provider.dart';
+import '../../negocio/providers/negocio_provider.dart';
 
 final authRepositoryProvider = Provider((ref) => AuthRepository());
 
@@ -28,6 +30,12 @@ class AuthNotifier extends Notifier<AuthState> {
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('usuario_id', usuario.id);
+
+      // Precarga (sin esperar) la configuración del negocio para que, una
+      // vez adentro, acciones como pedir la clave especial o abrir el
+      // código de barras no tengan que esperar la primera ida y vuelta a
+      // Firestore: ya quedó resuelta durante el login.
+      unawaited(ref.read(negocioRepositoryProvider).obtenerNegocioActual());
     } catch (e) {
       state = AuthState(error: e.toString().replaceAll('Exception: ', ''));
     }

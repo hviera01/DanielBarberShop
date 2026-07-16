@@ -14,6 +14,7 @@ import '../../../negocio/data/negocio_model.dart';
 import '../../../negocio/presentation/widgets/acceso_especial.dart';
 import '../../../productos/data/producto_model.dart';
 import '../../../productos/providers/productos_provider.dart';
+import '../../../categorias/providers/categorias_provider.dart';
 import '../../../../core/utils/formato_moneda.dart';
 import '../../../../core/widgets/pdf_preview_dialog.dart';
 import '../widgets/buscar_producto_dialog.dart';
@@ -111,18 +112,34 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     if (cliente == null) return;
     final documento = (cliente as dynamic).dni ?? '';
     final nombre = cliente.nombreCompleto ?? '';
-    setState(() => _nombreClienteController.text = nombre);
+    // Antes solo se actualizaba el nombre visible en el campo "Cliente": el
+    // RTN/documento sí quedaba guardado en el carrito (se usaba al grabar la
+    // venta), pero el campo "RTN / Documento" en pantalla no se refrescaba,
+    // así que parecía que elegir un cliente solo traía el nombre.
+    setState(() {
+      _nombreClienteController.text = nombre;
+      _documentoClienteController.text = documento;
+    });
     ref.read(carritoVentaProvider.notifier).establecerCliente(documento: documento, nombre: nombre);
   }
 
   // ---------- Producto: agregar directo desde el buscador ----------
+
+  /// Categorías como servicios o pintura preparada pueden marcarse para no
+  /// controlar existencia: en ese caso la existencia en 0 (o negativa) no
+  /// debe bloquear ni pedir clave especial, ni disparar el reembasado.
+  bool _categoriaControlaStock(String idCategoria) {
+    final categorias = ref.read(categoriasStreamProvider).value ?? [];
+    final coincidencias = categorias.where((c) => c.id == idCategoria).toList();
+    return coincidencias.isEmpty ? true : coincidencias.first.controlaStock;
+  }
 
   Future<void> _agregarProductoDesdeBusqueda() async {
     final resultado = await Navigator.of(context).push<ProductoConPrecio>(
       MaterialPageRoute(fullscreenDialog: true, builder: (context) => const BuscarProductoDialog()),
     );
     if (resultado == null || !mounted) return;
-    if (resultado.producto.stock <= 0) {
+    if (resultado.producto.stock <= 0 && _categoriaControlaStock(resultado.producto.idCategoria)) {
       final autorizado = await verificarAccesoEspecial(context, ref, PermisosEspeciales.ventasAgregarSinStock);
       if (!mounted) return;
       if (!autorizado) {
@@ -138,14 +155,31 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     ref.read(carritoVentaProvider.notifier).quitarItem(index);
   }
 
+  // Cuando el usuario cancela o rechaza la operación (reembasado, opción
+  // inválida, etc.) hay que devolver el campo de cantidad a su valor real;
+  // si no, el texto tipeado se queda en el campo y el próximo toque afuera
+  // (onTapOutside) vuelve a disparar la misma confirmación una y otra vez.
+  void _revertirCantidad(int index) {
+    final carrito = ref.read(carritoVentaProvider);
+    if (index >= carrito.items.length) return;
+    _ctrlCantidad[index]?.text = _formatoCantidad(carrito.items[index].cantidad);
+  }
+
   Future<void> _actualizarCantidad(int index, double nuevaCantidad) async {
     if (nuevaCantidad <= 0) {
       _mostrarMensaje('La cantidad debe ser mayor a 0');
+      _revertirCantidad(index);
       return;
     }
     final carrito = ref.read(carritoVentaProvider);
     if (index >= carrito.items.length) return;
     final item = carrito.items[index];
+
+    if (!_categoriaControlaStock(item.idCategoria)) {
+      ref.read(carritoVentaProvider.notifier).actualizarLinea(index, cantidad: nuevaCantidad);
+      return;
+    }
+
     final productos = ref.read(productosStreamProvider).value ?? [];
     final coincidencias = productos.where((p) => p.id == item.idProducto).toList();
     final stockDisponible = coincidencias.isNotEmpty ? coincidencias.first.stock : 0.0;
@@ -155,11 +189,17 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
         'Reembasado',
         'El producto "${item.nombreProducto}" no tiene suficiente stock para $nuevaCantidad unidad(es).\n¿Desea realizar un reembasado?',
       );
-      if (!quiereReembasar) return;
+      if (!quiereReembasar) {
+        _revertirCantidad(index);
+        return;
+      }
       if (!mounted) return;
 
       final resultado = await showDialog<ReembaseResultado>(context: context, builder: (context) => const ReembaseDialog());
-      if (resultado == null) return;
+      if (resultado == null) {
+        _revertirCantidad(index);
+        return;
+      }
 
       double cantidadReembasar;
       var cantidadFinal = nuevaCantidad;
@@ -183,6 +223,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
           break;
         default:
           _mostrarMensaje('Opción de reembasado inválida');
+          _revertirCantidad(index);
           return;
       }
 
@@ -195,6 +236,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
           );
       if (!ok) {
         _mostrarMensaje('No se pudo descontar el stock del producto base');
+        _revertirCantidad(index);
         return;
       }
       ref.read(carritoVentaProvider.notifier).actualizarLinea(index, cantidad: cantidadFinal, reembasado: true);
@@ -255,12 +297,12 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   }
 
   double _subtotalConIsv(dynamic item) {
-    final precioConIsv = item.precioVenta * 1.15;
-    return precioConIsv * item.cantidad * (1 - item.descuentoPorcentaje / 100);
+    final precioConIsv = redondearMoneda(item.precioVenta * 1.15);
+    return redondearMoneda(precioConIsv * item.cantidad * (1 - item.descuentoPorcentaje / 100));
   }
 
   double _subtotalSinIsv(dynamic item) {
-    return (item.precioVenta as double) * item.cantidad * (1 - item.descuentoPorcentaje / 100);
+    return redondearMoneda((item.precioVenta as double) * item.cantidad * (1 - item.descuentoPorcentaje / 100));
   }
 
   double _importeMostrado(dynamic item) => _precioCarritoConIsv ? _subtotalConIsv(item) : _subtotalSinIsv(item);
@@ -505,7 +547,9 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                 const SizedBox(height: 14),
                 _tarjetaDatosVenta(carrito, esMovil),
                 const SizedBox(height: 14),
-                SizedBox(height: altoTabla, child: _tarjetaCarritoGrande(carrito, esMovil)),
+                esMovil
+                    ? _tarjetaCarritoGrande(carrito, esMovil)
+                    : SizedBox(height: altoTabla, child: _tarjetaCarritoGrande(carrito, esMovil)),
                 const SizedBox(height: 14),
                 _tarjetaTotales(carrito, esMovil),
               ],
@@ -906,21 +950,41 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
             _encabezadoTablaCarrito(),
             Divider(height: 18, color: Colors.grey.shade300),
           ],
-          Expanded(
-            child: carrito.items.isEmpty
-                ? Center(
-                    child: Text(
-                      'Todavía no agregaste productos.\nUsá "Agregar Producto" para buscar del inventario.',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(color: Colors.grey.shade500),
-                    ),
-                  )
-                : ListView.separated(
-                    itemCount: carrito.items.length,
-                    separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
-                    itemBuilder: (context, i) => esMovil ? _filaCarritoMovil(i, carrito.items[i], mapaProductos) : _filaCarritoTabla(i, carrito.items[i], mapaProductos),
-                  ),
-          ),
+          if (carrito.items.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  'Todavía no agregaste productos.\nUsá "Agregar Producto" para buscar del inventario.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(color: Colors.grey.shade500),
+                ),
+              ),
+            )
+          else if (esMovil)
+            // En móvil no usamos una lista con scroll propio: la tabla del
+            // carrito viviría dentro del SingleChildScrollView de toda la
+            // pantalla, y dos scrolls verticales anidados hacen que, al
+            // llegar al borde de este (el interno), ya no se pueda volver a
+            // subir arrastrando "por fuera" porque no queda nada de esa
+            // pantalla visible fuera de la tabla. Con una Column simple todo
+            // el scroll lo maneja la pantalla completa.
+            Column(
+              children: [
+                for (var i = 0; i < carrito.items.length; i++) ...[
+                  if (i > 0) Divider(height: 1, color: Colors.grey.shade200),
+                  _filaCarritoMovil(i, carrito.items[i], mapaProductos),
+                ],
+              ],
+            )
+          else
+            Expanded(
+              child: ListView.separated(
+                itemCount: carrito.items.length,
+                separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
+                itemBuilder: (context, i) => _filaCarritoTabla(i, carrito.items[i], mapaProductos),
+              ),
+            ),
         ],
       ),
     );
@@ -975,10 +1039,20 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     );
   }
 
-  Widget _campoInlineNumero(TextEditingController controlador, void Function(double) alConfirmar, {String? sufijo}) {
+  // [valorActual] es el valor ya aplicado (el que tiene el item en el
+  // carrito). Antes, este campo confirmaba en cada tecla (onChanged) y al
+  // tocar fuera (onTapOutside) sin desenfocarse, lo que provocaba pedir la
+  // clave especial (o el diálogo de reembasado) una y otra vez con
+  // cualquier botón que se tocara: como el campo nunca perdía el foco,
+  // *todo* toque fuera de él se interpretaba como "confirmar de nuevo".
+  // Ahora solo se confirma al enviar o al salir del campo, se desenfoca
+  // explícitamente, y si el valor no cambió respecto al ya aplicado no se
+  // vuelve a llamar a alConfirmar.
+  Widget _campoInlineNumero(TextEditingController controlador, double valorActual, void Function(double) alConfirmar, {String? sufijo}) {
     void confirmar() {
       final valor = double.tryParse(controlador.text.replaceAll(',', '').trim());
-      if (valor != null) alConfirmar(valor);
+      if (valor == null || (valor - valorActual).abs() < 0.005) return;
+      alConfirmar(valor);
     }
 
     return TextField(
@@ -994,19 +1068,21 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       ),
-      onChanged: (_) => confirmar(),
       onSubmitted: (_) => confirmar(),
-      onTapOutside: (_) => confirmar(),
+      onTapOutside: (_) {
+        FocusManager.instance.primaryFocus?.unfocus();
+        confirmar();
+      },
     );
   }
 
-  Widget _campoInlineConEtiqueta(String etiqueta, TextEditingController controlador, void Function(double) alConfirmar) {
+  Widget _campoInlineConEtiqueta(String etiqueta, TextEditingController controlador, double valorActual, void Function(double) alConfirmar) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(etiqueta, style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey.shade500)),
         const SizedBox(height: 4),
-        _campoInlineNumero(controlador, alConfirmar),
+        _campoInlineNumero(controlador, valorActual, alConfirmar),
       ],
     );
   }
@@ -1038,9 +1114,9 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
               ],
             ),
           ),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlCantidad, (v) => _actualizarCantidad(index, v)))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlPrecio, (v) => _precioCarritoConIsv ? _actualizarPrecio(index, v) : _actualizarPrecioSinIsv(index, v)))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlDescuento, (v) => _actualizarDescuentoLinea(index, v), sufijo: '%'))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v)))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlPrecio, precioMostrado, (v) => _precioCarritoConIsv ? _actualizarPrecio(index, v) : _actualizarPrecioSinIsv(index, v)))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlDescuento, item.descuentoPorcentaje as double, (v) => _actualizarDescuentoLinea(index, v), sufijo: '%'))),
           Expanded(flex: 2, child: Text(formatearMoneda(importe), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700))),
           SizedBox(
             width: 40,
@@ -1085,11 +1161,11 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(child: _campoInlineConEtiqueta('Cantidad', ctrlCantidad, (v) => _actualizarCantidad(index, v))),
+              Expanded(child: _campoInlineConEtiqueta('Cantidad', ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v))),
               const SizedBox(width: 8),
-              Expanded(child: _campoInlineConEtiqueta(_precioCarritoConIsv ? 'Precio (c/ISV)' : 'Precio (s/ISV)', ctrlPrecio, (v) => _precioCarritoConIsv ? _actualizarPrecio(index, v) : _actualizarPrecioSinIsv(index, v))),
+              Expanded(child: _campoInlineConEtiqueta(_precioCarritoConIsv ? 'Precio (c/ISV)' : 'Precio (s/ISV)', ctrlPrecio, precioMostrado, (v) => _precioCarritoConIsv ? _actualizarPrecio(index, v) : _actualizarPrecioSinIsv(index, v))),
               const SizedBox(width: 8),
-              Expanded(child: _campoInlineConEtiqueta('Desc. %', ctrlDescuento, (v) => _actualizarDescuentoLinea(index, v))),
+              Expanded(child: _campoInlineConEtiqueta('Desc. %', ctrlDescuento, item.descuentoPorcentaje as double, (v) => _actualizarDescuentoLinea(index, v))),
             ],
           ),
           const SizedBox(height: 10),

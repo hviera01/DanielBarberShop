@@ -4,7 +4,7 @@ import '../../productos/data/producto_model.dart';
 import '../../../core/utils/formato_moneda.dart';
 
 double _subtotalLinea(double precioCompra, double cantidad, double descuentoPorcentaje) {
-  return precioCompra * cantidad * (1 - descuentoPorcentaje / 100);
+  return redondearMoneda(precioCompra * cantidad * (1 - descuentoPorcentaje / 100));
 }
 
 class CarritoCompraState {

@@ -118,8 +118,8 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
   }
 
   double _descuentoLineaMonto(dynamic item) {
-    final sinDescuento = (item.precioCompra as double) * (item.cantidad as double);
-    return sinDescuento - (item.subtotal as double);
+    final sinDescuento = redondearMoneda((item.precioCompra as double) * (item.cantidad as double));
+    return redondearMoneda(sinDescuento - (item.subtotal as double));
   }
 
   // ---------- Limpiar ----------
@@ -228,7 +228,9 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
                 const SizedBox(height: 14),
                 _tarjetaDatosCompra(carrito, esMovil),
                 const SizedBox(height: 14),
-                SizedBox(height: altoTabla, child: _tarjetaCarritoGrande(carrito, esMovil)),
+                esMovil
+                    ? _tarjetaCarritoGrande(carrito, esMovil)
+                    : SizedBox(height: altoTabla, child: _tarjetaCarritoGrande(carrito, esMovil)),
                 const SizedBox(height: 14),
                 _tarjetaTotales(carrito, esMovil),
               ],
@@ -591,21 +593,37 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
             _encabezadoTablaCarrito(),
             Divider(height: 18, color: Colors.grey.shade300),
           ],
-          Expanded(
-            child: carrito.items.isEmpty
-                ? Center(
-                    child: Text(
-                      'Todavía no agregaste productos.\nUsá "Agregar Producto" para buscar del inventario.',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(color: Colors.grey.shade500),
-                    ),
-                  )
-                : ListView.separated(
-                    itemCount: carrito.items.length,
-                    separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
-                    itemBuilder: (context, i) => esMovil ? _filaCarritoMovil(i, carrito.items[i], mapaProductos) : _filaCarritoTabla(i, carrito.items[i], mapaProductos),
-                  ),
-          ),
+          if (carrito.items.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  'Todavía no agregaste productos.\nUsá "Agregar Producto" para buscar del inventario.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(color: Colors.grey.shade500),
+                ),
+              ),
+            )
+          else if (esMovil)
+            // Ver nota equivalente en registrar_venta_screen.dart: en móvil
+            // evitamos una lista con scroll propio anidada dentro del scroll
+            // de toda la pantalla.
+            Column(
+              children: [
+                for (var i = 0; i < carrito.items.length; i++) ...[
+                  if (i > 0) Divider(height: 1, color: Colors.grey.shade200),
+                  _filaCarritoMovil(i, carrito.items[i], mapaProductos),
+                ],
+              ],
+            )
+          else
+            Expanded(
+              child: ListView.separated(
+                itemCount: carrito.items.length,
+                separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
+                itemBuilder: (context, i) => _filaCarritoTabla(i, carrito.items[i], mapaProductos),
+              ),
+            ),
         ],
       ),
     );
@@ -627,10 +645,11 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
     );
   }
 
-  Widget _campoInlineNumero(TextEditingController controlador, void Function(double) alConfirmar, {String? sufijo}) {
+  Widget _campoInlineNumero(TextEditingController controlador, double valorActual, void Function(double) alConfirmar, {String? sufijo}) {
     void confirmar() {
       final valor = double.tryParse(controlador.text.replaceAll(',', '').trim());
-      if (valor != null) alConfirmar(valor);
+      if (valor == null || (valor - valorActual).abs() < 0.005) return;
+      alConfirmar(valor);
     }
 
     return TextField(
@@ -646,19 +665,21 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       ),
-      onChanged: (_) => confirmar(),
       onSubmitted: (_) => confirmar(),
-      onTapOutside: (_) => confirmar(),
+      onTapOutside: (_) {
+        FocusManager.instance.primaryFocus?.unfocus();
+        confirmar();
+      },
     );
   }
 
-  Widget _campoInlineConEtiqueta(String etiqueta, TextEditingController controlador, void Function(double) alConfirmar) {
+  Widget _campoInlineConEtiqueta(String etiqueta, TextEditingController controlador, double valorActual, void Function(double) alConfirmar) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(etiqueta, style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey.shade500)),
         const SizedBox(height: 4),
-        _campoInlineNumero(controlador, alConfirmar),
+        _campoInlineNumero(controlador, valorActual, alConfirmar),
       ],
     );
   }
@@ -680,9 +701,9 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
             flex: 4,
             child: Text(item.nombreProducto as String, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
           ),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlCantidad, (v) => _actualizarCantidad(index, v)))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlPrecio, (v) => _actualizarPrecio(index, v)))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlDescuento, (v) => _actualizarDescuentoLinea(index, v), sufijo: '%'))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v)))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlPrecio, item.precioCompra as double, (v) => _actualizarPrecio(index, v)))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlDescuento, item.descuentoPorcentaje as double, (v) => _actualizarDescuentoLinea(index, v), sufijo: '%'))),
           Expanded(flex: 2, child: Text(formatearMoneda(_descuentoLineaMonto(item)), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade600))),
           Expanded(flex: 2, child: Text(formatearMoneda(item.subtotal as double), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700))),
           SizedBox(
@@ -725,11 +746,11 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(child: _campoInlineConEtiqueta('Cantidad', ctrlCantidad, (v) => _actualizarCantidad(index, v))),
+              Expanded(child: _campoInlineConEtiqueta('Cantidad', ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v))),
               const SizedBox(width: 8),
-              Expanded(child: _campoInlineConEtiqueta('Costo unitario', ctrlPrecio, (v) => _actualizarPrecio(index, v))),
+              Expanded(child: _campoInlineConEtiqueta('Costo unitario', ctrlPrecio, item.precioCompra as double, (v) => _actualizarPrecio(index, v))),
               const SizedBox(width: 8),
-              Expanded(child: _campoInlineConEtiqueta('Desc. %', ctrlDescuento, (v) => _actualizarDescuentoLinea(index, v))),
+              Expanded(child: _campoInlineConEtiqueta('Desc. %', ctrlDescuento, item.descuentoPorcentaje as double, (v) => _actualizarDescuentoLinea(index, v))),
             ],
           ),
           const SizedBox(height: 10),

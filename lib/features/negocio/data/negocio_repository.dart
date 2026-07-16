@@ -7,6 +7,19 @@ import 'negocio_model.dart';
 class NegocioRepository {
   final _doc = FirebaseFirestore.instance.collection('configuracion').doc('negocio');
 
+  // Cache en memoria de la última lectura exitosa de `obtenerNegocioActual`.
+  // Antes cada acción puntual (pedir clave especial, abrir ajuste de stock,
+  // generar el código de barras, etc.) esperaba una ida y vuelta nueva a
+  // Firestore, y en la primera vez de la sesión esa ida y vuelta podía tardar
+  // varios segundos sin que la pantalla mostrara nada mientras tanto — daba
+  // la sensación de que el toque no había hecho nada. Con este cache, una
+  // vez que se obtiene la configuración una vez (por ejemplo, justo después
+  // del login, ver `AuthNotifier.login`), el resto de acciones de la sesión
+  // la reciben al instante.
+  static NegocioModel? _cache;
+  static DateTime? _cacheFecha;
+  static const _vigenciaCache = Duration(seconds: 30);
+
   String hashClave(String clave) {
     return sha256.convert(utf8.encode(clave)).toString();
   }
@@ -24,12 +37,29 @@ class NegocioRepository {
   /// responde rápido, se sigue con la configuración por defecto en vez de
   /// trabar la acción.
   Future<NegocioModel> obtenerNegocioActual() async {
+    final cache = _cache;
+    final cacheFecha = _cacheFecha;
+    if (cache != null && cacheFecha != null && DateTime.now().difference(cacheFecha) < _vigenciaCache) {
+      return cache;
+    }
     try {
       final snap = await _doc.get().timeout(const Duration(seconds: 8));
-      return NegocioModel.fromMap(snap.data());
+      final negocio = NegocioModel.fromMap(snap.data());
+      _cache = negocio;
+      _cacheFecha = DateTime.now();
+      return negocio;
     } catch (_) {
-      return const NegocioModel();
+      return cache ?? const NegocioModel();
     }
+  }
+
+  /// Invalida el cache de [obtenerNegocioActual]: se llama luego de guardar
+  /// cualquier cambio a la configuración para que el resto de la sesión no
+  /// siga usando datos viejos (permisos, clave especial, etc.) hasta que
+  /// venza el cache por su cuenta.
+  void _invalidarCache() {
+    _cache = null;
+    _cacheFecha = null;
   }
 
   Future<void> actualizarDatosGenerales({
@@ -58,33 +88,41 @@ class NegocioRepository {
       'rangoHasta': rangoHasta,
       'fechaLimiteEmision': fechaLimiteEmision != null ? Timestamp.fromDate(fechaLimiteEmision) : null,
     }, SetOptions(merge: true));
+    _invalidarCache();
   }
 
   Future<void> guardarLogoColor(Uint8List bytes) async {
     await _doc.set({'logoColorBase64': base64Encode(bytes)}, SetOptions(merge: true));
+    _invalidarCache();
   }
 
   Future<void> guardarLogoBn(Uint8List bytes) async {
     await _doc.set({'logoBnBase64': base64Encode(bytes)}, SetOptions(merge: true));
+    _invalidarCache();
   }
 
   Future<void> actualizarPermisos(Map<String, bool> permisos) async {
     await _doc.set({'permisos': permisos}, SetOptions(merge: true));
+    _invalidarCache();
   }
 
   Future<void> establecerClave(String clave) async {
     await _doc.set({'claveEspecialHash': hashClave(clave)}, SetOptions(merge: true));
+    _invalidarCache();
   }
 
   Future<void> quitarClave() async {
     await _doc.set({'claveEspecialHash': ''}, SetOptions(merge: true));
+    _invalidarCache();
   }
 
   Future<void> actualizarImpresoraTermica(String url, String nombre) async {
     await _doc.set({'impresoraTermicaUrl': url, 'impresoraTermicaNombre': nombre}, SetOptions(merge: true));
+    _invalidarCache();
   }
 
   Future<void> actualizarImpresoraEtiquetas(String url, String nombre) async {
     await _doc.set({'impresoraEtiquetasUrl': url, 'impresoraEtiquetasNombre': nombre}, SetOptions(merge: true));
+    _invalidarCache();
   }
 }
