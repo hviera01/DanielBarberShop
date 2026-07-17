@@ -27,6 +27,11 @@ class VentaModel {
   final String usuarioAnulacion;
   final String motivoAnulacion;
   final DateTime? fechaAnulacion;
+  // true cuando la venta se guardó pero no se pudo imprimir (sin impresora
+  // configurada en ese dispositivo, o falló el intento) — típicamente una
+  // venta hecha en el celular sin la impresora de red a mano. Se resuelve
+  // reimprimiendo desde cualquier dispositivo (ver DetalleVentaScreen).
+  final bool pendienteImpresion;
 
   bool get estaAnulada => estado == 'Anulada';
 
@@ -56,6 +61,7 @@ class VentaModel {
     this.usuarioAnulacion = '',
     this.motivoAnulacion = '',
     this.fechaAnulacion,
+    this.pendienteImpresion = false,
   });
 
   factory VentaModel.fromMap(String id, Map<String, dynamic> data, List<ItemVentaModel> detalle) {
@@ -85,6 +91,7 @@ class VentaModel {
       usuarioAnulacion: data['usuarioAnulacion'] ?? '',
       motivoAnulacion: data['motivoAnulacion'] ?? '',
       fechaAnulacion: (data['fechaAnulacion'] as Timestamp?)?.toDate(),
+      pendienteImpresion: data['pendienteImpresion'] ?? false,
     );
   }
 }

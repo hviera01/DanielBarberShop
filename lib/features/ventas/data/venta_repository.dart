@@ -3,11 +3,13 @@ import 'venta_model.dart';
 import 'venta_en_espera_model.dart';
 import 'item_venta_model.dart';
 import '../../../core/utils/formato_moneda.dart';
+import '../../productos/data/lote_costo_repository.dart';
 
 class VentaRepository {
   final _db = FirebaseFirestore.instance;
   final _colVentas = FirebaseFirestore.instance.collection('ventas');
   final _colEspera = FirebaseFirestore.instance.collection('ventasEnEspera');
+  final _lotes = LoteCostoRepository();
   final _colContadores = FirebaseFirestore.instance.collection('contadores');
   final _colVentasCredito = FirebaseFirestore.instance.collection('ventasCredito');
 
@@ -70,6 +72,7 @@ class VentaRepository {
     final itemsADescontar = items.where((i) => !i.reembasado && !categoriasSinControlStock.contains(i.idCategoria)).toList();
 
     late String numeroDocumento;
+    late Map<ItemVentaModel, double> costosFifo;
 
     // Timeout corto (el default del SDK es 30s): en cajas con internet
     // lento/intermitente es mejor que el cajero vea rápido que falló y
@@ -92,8 +95,30 @@ class VentaRepository {
       numeroDocumento = _formatearCorrelativo(tipoDocumento, nuevo);
 
       final stocksActuales = <String, double>{};
+      final precioCompraActual = <String, double>{};
       for (var i = 0; i < itemsADescontar.length; i++) {
-        stocksActuales[itemsADescontar[i].idProducto] = ((snapsStock[i].data()?['stock'] ?? 0) as num).toDouble();
+        final data = snapsStock[i].data();
+        stocksActuales[itemsADescontar[i].idProducto] = ((data?['stock'] ?? 0) as num).toDouble();
+        precioCompraActual[itemsADescontar[i].idProducto] = ((data?['precioCompra'] ?? 0) as num).toDouble();
+      }
+
+      // Costeo FIFO: cada producto distinto que se va a descontar lee sus
+      // lotes UNA vez (todavía en fase de lectura, antes de cualquier
+      // escritura de la transacción); si el carrito tiene más de una línea
+      // del mismo producto, comparten el mismo estado para no contar dos
+      // veces la misma capacidad de un lote.
+      final idsProductoUnicos = itemsADescontar.map((i) => i.idProducto).toSet().toList();
+      final snapsLotesPorProducto = await Future.wait(
+        idsProductoUnicos.map((id) => _lotes.leerLotesTransaccional(transaction, id)),
+      );
+      final estadoLotesPorProducto = <String, EstadoLotesProducto>{
+        for (var i = 0; i < idsProductoUnicos.length; i++) idsProductoUnicos[i]: _lotes.inicializarEstado(snapsLotesPorProducto[i]),
+      };
+      costosFifo = <ItemVentaModel, double>{};
+      for (final item in itemsADescontar) {
+        final estado = estadoLotesPorProducto[item.idProducto]!;
+        final costoFallback = precioCompraActual[item.idProducto] ?? item.precioCompraUsado;
+        costosFifo[item] = _lotes.consumir(estado, item.cantidad, costoFallback: costoFallback);
       }
 
       transaction.set(contadorRef, {'ultimo': nuevo}, SetOptions(merge: true));
@@ -119,14 +144,17 @@ class VentaRepository {
         'regExonerado': regExonerado,
         'regSag': regSag,
         'descuentoGlobal': descuentoGlobal,
+        'pendienteImpresion': false,
       });
 
       for (final item in items) {
         final itemRef = ventaRef.collection('detalle').doc();
+        final costoReal = costosFifo[item];
+        final itemAGuardar = costoReal != null ? item.copyWith(precioCompraUsado: costoReal) : item;
         // 'fecha' permite consultar el detalle de todas las ventas de un
         // rango con una sola query (collectionGroup) en vez de tener que
         // leer la subcolección de cada venta una por una.
-        transaction.set(itemRef, {...item.toMap(), 'fecha': Timestamp.fromDate(fechaRegistro)});
+        transaction.set(itemRef, {...itemAGuardar.toMap(), 'fecha': Timestamp.fromDate(fechaRegistro)});
       }
 
       if (condicion == 'Credito') {
@@ -157,6 +185,10 @@ class VentaRepository {
           'motivo': 'Venta $numeroDocumento',
           'fecha': FieldValue.serverTimestamp(),
         });
+      }
+
+      for (final estado in estadoLotesPorProducto.values) {
+        _lotes.aplicarEstado(transaction, estado);
       }
 
       // Historial de precio de venta por producto: no aplica a cotizaciones,
@@ -204,8 +236,15 @@ class VentaRepository {
       regExonerado: regExonerado,
       regSag: regSag,
       descuentoGlobal: descuentoGlobal,
-      detalle: items,
+      detalle: items.map((item) {
+        final costoReal = costosFifo[item];
+        return costoReal != null ? item.copyWith(precioCompraUsado: costoReal) : item;
+      }).toList(),
     );
+  }
+
+  Future<void> marcarPendienteImpresion(String id, bool valor) async {
+    await _colVentas.doc(id).update({'pendienteImpresion': valor});
   }
 
   Future<VentaModel?> obtenerVentaPorId(String id) async {
@@ -307,6 +346,19 @@ class VentaRepository {
           'motivo': 'Anulación de venta $numeroDocumento',
           'fecha': FieldValue.serverTimestamp(),
         });
+
+        // El stock repuesto vuelve como un lote nuevo, al costo real que
+        // tenía esa venta (ya sea el costo de fábrica o el ya calculado por
+        // FIFO). Es más simple y igual de correcto hacia adelante que tratar
+        // de deshacer el consumo exacto de lotes de la venta original.
+        _lotes.crearLote(
+          transaction,
+          item.idProducto,
+          cantidad: item.cantidad,
+          costoUnitario: item.precioCompraUsado,
+          fecha: DateTime.now(),
+          origen: 'ajuste',
+        );
       }
     }, timeout: const Duration(seconds: 12));
   }

@@ -1,11 +1,16 @@
 import 'dart:async';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../data/venta_en_espera_model.dart';
 import '../../data/venta_export_service.dart';
+import '../../data/venta_model.dart';
+import '../../data/venta_ticket_escpos_service.dart';
 import '../../providers/carrito_provider.dart';
 import '../../providers/ventas_provider.dart';
 import '../../../auth/providers/auth_provider.dart';
@@ -15,6 +20,7 @@ import '../../../negocio/presentation/widgets/acceso_especial.dart';
 import '../../../productos/data/producto_model.dart';
 import '../../../productos/providers/productos_provider.dart';
 import '../../../categorias/providers/categorias_provider.dart';
+import '../../../../core/services/impresora_red_service.dart';
 import '../../../../core/utils/formato_moneda.dart';
 import '../../../../core/widgets/pdf_preview_dialog.dart';
 import '../widgets/buscar_producto_dialog.dart';
@@ -50,6 +56,8 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   bool _precioCarritoConIsv = true;
 
   final _servicioExport = VentaExportService();
+  final _servicioTicketEscPos = VentaTicketEscPosService();
+  final _servicioImpresoraRed = ImpresoraRedService();
   bool _guardando = false;
 
   // Controladores para la edición inline (cantidad / precio / descuento) de
@@ -58,10 +66,42 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   final Map<int, TextEditingController> _ctrlCantidad = {};
   final Map<int, TextEditingController> _ctrlPrecio = {};
   final Map<int, TextEditingController> _ctrlDescuento = {};
+  final Map<int, TextEditingController> _ctrlDescripcion = {};
+  // _focusInline y _confirmarInline respaldan a _campoInlineNumero: ver el
+  // comentario junto a esa función para la explicación completa.
+  final Map<String, FocusNode> _focusInline = {};
+  final Map<String, VoidCallback> _confirmarInline = {};
+  final Map<int, FocusNode> _focusDescripcion = {};
+  final Map<int, Future<void> Function()> _confirmarDescripcion = {};
   int _conteoItemsControladores = -1;
 
   @override
+  void initState() {
+    super.initState();
+    // Atajos a nivel de hardware (no de foco): así funcionan sin importar
+    // qué campo de la pantalla tenga el foco en ese momento (a diferencia de
+    // envolver el árbol en Focus/Shortcuts, que competiría con los
+    // TextField de cantidad/precio/descripción ya presentes).
+    HardwareKeyboard.instance.addHandler(_manejarAtajoTeclado);
+  }
+
+  bool _manejarAtajoTeclado(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    if (!mounted || _guardando) return false;
+    if (event.logicalKey == LogicalKeyboardKey.f10) {
+      _agregarProductoDesdeBusqueda();
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.f12) {
+      _confirmarVenta();
+      return true;
+    }
+    return false;
+  }
+
+  @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_manejarAtajoTeclado);
     _nombreClienteController.dispose();
     _documentoClienteController.dispose();
     _ocController.dispose();
@@ -76,6 +116,15 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     }
     for (final c in _ctrlDescuento.values) {
       c.dispose();
+    }
+    for (final c in _ctrlDescripcion.values) {
+      c.dispose();
+    }
+    for (final f in _focusInline.values) {
+      f.dispose();
+    }
+    for (final f in _focusDescripcion.values) {
+      f.dispose();
     }
     super.dispose();
   }
@@ -410,6 +459,20 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     _ctrlCantidad.clear();
     _ctrlPrecio.clear();
     _ctrlDescuento.clear();
+    for (final c in _ctrlDescripcion.values) {
+      c.dispose();
+    }
+    _ctrlDescripcion.clear();
+    for (final f in _focusInline.values) {
+      f.dispose();
+    }
+    _focusInline.clear();
+    _confirmarInline.clear();
+    for (final f in _focusDescripcion.values) {
+      f.dispose();
+    }
+    _focusDescripcion.clear();
+    _confirmarDescripcion.clear();
     _conteoItemsControladores = 0;
   }
 
@@ -506,18 +569,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       if (esFacturable) {
         final negocio = await ref.read(negocioRepositoryProvider).obtenerNegocioActual();
         if (!mounted) return;
-        final impresora = negocio.impresoraTermicaUrl.isEmpty ? null : Printer(url: negocio.impresoraTermicaUrl, name: negocio.impresoraTermicaNombre);
-        await Future<void>.delayed(const Duration(milliseconds: 150));
-        if (!mounted) return;
-        showDialog(
-          context: context,
-          builder: (context) => PdfPreviewDialog(
-            titulo: 'Vista previa · ${venta.numeroDocumento}',
-            nombreArchivo: 'venta_${venta.numeroDocumento}.pdf',
-            generarPdf: () => _servicioExport.generarPdfFactura(venta, negocio),
-            impresora: impresora,
-          ),
-        );
+        await _manejarImpresion(venta, negocio);
       } else {
         _mostrarMensaje('${_tiposDocumento[venta.tipoDocumento]} generada: ${venta.numeroDocumento}');
       }
@@ -527,6 +579,73 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
           : 'Error al registrar: $e');
     } finally {
       if (mounted) setState(() => _guardando = false);
+    }
+  }
+
+  // Decide cómo imprimir (o no) la venta recién registrada, según
+  // negocio.modoImpresion y la plataforma:
+  // - 'preguntar' (default): igual que siempre, diálogo de vista previa.
+  // - 'directo' en desktop: imprime sin diálogo en la impresora del SO
+  //   configurada (paquete `printing`).
+  // - 'directo' en móvil: no hay forma de listar impresoras del SO, así que
+  //   se manda el ticket por ESC/POS a la impresora de red configurada.
+  // - 'directo' en web: no se puede imprimir sin diálogo desde el
+  //   navegador, así que se abre su diálogo de impresión directo (sin
+  //   nuestra propia vista previa intermedia).
+  // En cualquier caso, si no hay impresora configurada o falla el intento,
+  // no se bloquea nada: la venta ya quedó guardada. En móvil además se
+  // marca `pendienteImpresion` para poder reimprimirla después.
+  Future<void> _manejarImpresion(VentaModel venta, NegocioModel negocio) async {
+    if (negocio.modoImpresion != ModoImpresion.directo) {
+      final impresora = negocio.impresoraTermicaUrl.isEmpty ? null : Printer(url: negocio.impresoraTermicaUrl, name: negocio.impresoraTermicaNombre);
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => PdfPreviewDialog(
+          titulo: 'Vista previa · ${venta.numeroDocumento}',
+          nombreArchivo: 'venta_${venta.numeroDocumento}.pdf',
+          generarPdf: () => _servicioExport.generarPdfFactura(venta, negocio),
+          impresora: impresora,
+        ),
+      );
+      return;
+    }
+
+    if (kIsWeb) {
+      try {
+        await Printing.layoutPdf(onLayout: (formato) => _servicioExport.generarPdfFactura(venta, negocio), name: 'venta_${venta.numeroDocumento}.pdf');
+      } catch (_) {
+        _mostrarMensaje('No se pudo imprimir. La venta se guardó de todas formas.');
+      }
+      return;
+    }
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      if (negocio.impresoraRedIp.isEmpty) {
+        _mostrarMensaje('No hay impresora configurada: la venta quedó pendiente de impresión');
+        await ref.read(ventaRepositoryProvider).marcarPendienteImpresion(venta.id, true);
+        return;
+      }
+      final bytes = await _servicioTicketEscPos.generarTicket(venta, negocio);
+      final ok = await _servicioImpresoraRed.imprimir(ip: negocio.impresoraRedIp, puerto: negocio.impresoraRedPuerto, bytes: bytes);
+      if (!ok) {
+        _mostrarMensaje('No se pudo imprimir: la venta quedó pendiente de impresión');
+        await ref.read(ventaRepositoryProvider).marcarPendienteImpresion(venta.id, true);
+      }
+      return;
+    }
+
+    // Desktop (Windows/macOS/Linux).
+    if (negocio.impresoraTermicaUrl.isEmpty) {
+      _mostrarMensaje('No hay impresora configurada, la venta se guardó sin imprimir');
+      return;
+    }
+    try {
+      final impresora = Printer(url: negocio.impresoraTermicaUrl, name: negocio.impresoraTermicaNombre);
+      await Printing.directPrintPdf(printer: impresora, onLayout: (formato) => _servicioExport.generarPdfFactura(venta, negocio));
+    } catch (_) {
+      _mostrarMensaje('No se pudo imprimir en la impresora configurada');
     }
   }
 
@@ -930,6 +1049,20 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       _ctrlCantidad.clear();
       _ctrlPrecio.clear();
       _ctrlDescuento.clear();
+      for (final c in _ctrlDescripcion.values) {
+        c.dispose();
+      }
+      _ctrlDescripcion.clear();
+      for (final f in _focusInline.values) {
+        f.dispose();
+      }
+      _focusInline.clear();
+      _confirmarInline.clear();
+      for (final f in _focusDescripcion.values) {
+        f.dispose();
+      }
+      _focusDescripcion.clear();
+      _confirmarDescripcion.clear();
       _conteoItemsControladores = carrito.items.length;
     }
 
@@ -1077,23 +1210,42 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   }
 
   // [valorActual] es el valor ya aplicado (el que tiene el item en el
-  // carrito). Antes, este campo confirmaba en cada tecla (onChanged) y al
-  // tocar fuera (onTapOutside) sin desenfocarse, lo que provocaba pedir la
-  // clave especial (o el diálogo de reembasado) una y otra vez con
-  // cualquier botón que se tocara: como el campo nunca perdía el foco,
-  // *todo* toque fuera de él se interpretaba como "confirmar de nuevo".
-  // Ahora solo se confirma al enviar o al salir del campo, se desenfoca
-  // explícitamente, y si el valor no cambió respecto al ya aplicado no se
-  // vuelve a llamar a alConfirmar.
-  Widget _campoInlineNumero(TextEditingController controlador, double valorActual, void Function(double) alConfirmar, {String? sufijo}) {
+  // carrito). [claveFoco] identifica el campo (p.ej. "cantidad_2") para
+  // cachear su FocusNode entre reconstrucciones. Antes este campo confirmaba
+  // en cada tecla (onChanged) y al tocar fuera (onTapOutside) sin
+  // desenfocarse, lo que provocaba pedir la clave especial (o el diálogo de
+  // reembasado) una y otra vez con cualquier botón que se tocara: como el
+  // campo nunca perdía el foco, *todo* toque fuera de él se interpretaba
+  // como "confirmar de nuevo". Pasar a confirmar solo en onSubmitted/
+  // onTapOutside arregló eso, pero introdujo otro bug: si el usuario tocaba
+  // un botón directamente (sin pasar antes por un área vacía) el valor
+  // tecleado se perdía. Ahora se confirma al perder el foco por cualquier
+  // motivo (FocusNode.addListener), que cubre "cualquier forma de salir del
+  // campo" sin volver a onChanged. El listener se crea una sola vez
+  // (putIfAbsent) pero llama indirectamente a través de
+  // _confirmarInline[claveFoco], que se refresca en cada build: así siempre
+  // usa el [valorActual]/[alConfirmar] vigentes en vez de quedar atado a los
+  // del primer build. La guarda de "no cambió respecto al ya aplicado" evita
+  // volver a llamar a alConfirmar y así el problema original no vuelve.
+  Widget _campoInlineNumero(String claveFoco, TextEditingController controlador, double valorActual, void Function(double) alConfirmar, {String? sufijo}) {
     void confirmar() {
       final valor = double.tryParse(controlador.text.replaceAll(',', '').trim());
       if (valor == null || (valor - valorActual).abs() < 0.005) return;
       alConfirmar(valor);
     }
+    _confirmarInline[claveFoco] = confirmar;
+
+    final focusNode = _focusInline.putIfAbsent(claveFoco, () {
+      final node = FocusNode();
+      node.addListener(() {
+        if (!node.hasFocus) _confirmarInline[claveFoco]?.call();
+      });
+      return node;
+    });
 
     return TextField(
       controller: controlador,
+      focusNode: focusNode,
       textAlign: TextAlign.center,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       style: GoogleFonts.poppins(fontSize: 13),
@@ -1106,20 +1258,74 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       ),
       onSubmitted: (_) => confirmar(),
-      onTapOutside: (_) {
-        FocusManager.instance.primaryFocus?.unfocus();
-        confirmar();
-      },
+      onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
     );
   }
 
-  Widget _campoInlineConEtiqueta(String etiqueta, TextEditingController controlador, double valorActual, void Function(double) alConfirmar) {
+  Widget _campoInlineConEtiqueta(String claveFoco, String etiqueta, TextEditingController controlador, double valorActual, void Function(double) alConfirmar) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(etiqueta, style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey.shade500)),
         const SizedBox(height: 4),
-        _campoInlineNumero(controlador, valorActual, alConfirmar),
+        _campoInlineNumero(claveFoco, controlador, valorActual, alConfirmar),
+      ],
+    );
+  }
+
+  // Campo de descripción editable de una línea del carrito: no cambia el
+  // producto real, solo cómo se muestra/imprime esa línea de esta venta. Si
+  // el negocio activó el permiso ventasEditarDescripcion, pide la clave
+  // especial antes de aplicar el cambio (y revierte el texto si la cancelan
+  // o la clave es incorrecta).
+  Widget _campoDescripcion(int index, dynamic item, ProductoModel? producto) {
+    final ctrl = _ctrlDescripcion.putIfAbsent(index, () => TextEditingController(text: item.nombreProducto as String));
+
+    Future<void> confirmar() async {
+      final nuevoTexto = ctrl.text.trim();
+      final nombreActual = item.nombreProducto as String;
+      if (nuevoTexto.isEmpty) {
+        ctrl.text = nombreActual;
+        return;
+      }
+      if (nuevoTexto == nombreActual) return;
+      final nombreReal = producto?.nombre ?? nombreActual;
+      final negocio = await ref.read(negocioRepositoryProvider).obtenerNegocioActual();
+      if (negocio.tienePermiso(PermisosEspeciales.ventasEditarDescripcion)) {
+        if (!mounted) return;
+        final permitido = await verificarAccesoEspecial(context, ref, PermisosEspeciales.ventasEditarDescripcion);
+        if (!permitido) {
+          ctrl.text = nombreActual;
+          return;
+        }
+      }
+      ref.read(carritoVentaProvider.notifier).actualizarDescripcion(index, nuevoTexto, nombreReal);
+    }
+    _confirmarDescripcion[index] = confirmar;
+
+    final focusNode = _focusDescripcion.putIfAbsent(index, () {
+      final node = FocusNode();
+      node.addListener(() {
+        if (!node.hasFocus) _confirmarDescripcion[index]?.call();
+      });
+      return node;
+    });
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          controller: ctrl,
+          focusNode: focusNode,
+          style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
+          decoration: const InputDecoration(isDense: true, border: InputBorder.none, contentPadding: EdgeInsets.zero),
+          onSubmitted: (_) => confirmar(),
+          onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+        ),
+        if ((item.nombreOriginal as String).isNotEmpty)
+          Text('Editado (antes: ${item.nombreOriginal})', style: GoogleFonts.poppins(fontSize: 10, color: Colors.orange.shade800)),
+        if (item.reembasado as bool) Text('Reembasado', style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.grey.shade400)),
       ],
     );
   }
@@ -1140,20 +1346,10 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(flex: 2, child: Text(producto?.codigo ?? '-', style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade600))),
-          Expanded(
-            flex: 4,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(item.nombreProducto as String, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
-                if (item.reembasado as bool) Text('Reembasado', style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.grey.shade400)),
-              ],
-            ),
-          ),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v)))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlPrecio, precioMostrado, (v) => _precioCarritoConIsv ? _actualizarPrecio(index, v) : _actualizarPrecioSinIsv(index, v)))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlDescuento, item.descuentoPorcentaje as double, (v) => _actualizarDescuentoLinea(index, v), sufijo: '%'))),
+          Expanded(flex: 4, child: _campoDescripcion(index, item, producto)),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero('cantidad_$index', ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v)))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero('precio_$index', ctrlPrecio, precioMostrado, (v) => _precioCarritoConIsv ? _actualizarPrecio(index, v) : _actualizarPrecioSinIsv(index, v)))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero('descuento_$index', ctrlDescuento, item.descuentoPorcentaje as double, (v) => _actualizarDescuentoLinea(index, v), sufijo: '%'))),
           Expanded(flex: 2, child: Text(formatearMoneda(importe), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700))),
           SizedBox(
             width: 40,
@@ -1187,8 +1383,8 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(item.nombreProducto as String, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
-                    Text('${producto?.codigo ?? '-'}${(item.reembasado as bool) ? ' · reembasado' : ''}', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500)),
+                    _campoDescripcion(index, item, producto),
+                    Text(producto?.codigo ?? '-', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500)),
                   ],
                 ),
               ),
@@ -1198,11 +1394,11 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(child: _campoInlineConEtiqueta('Cantidad', ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v))),
+              Expanded(child: _campoInlineConEtiqueta('cantidad_$index', 'Cantidad', ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v))),
               const SizedBox(width: 8),
-              Expanded(child: _campoInlineConEtiqueta(_precioCarritoConIsv ? 'Precio (c/ISV)' : 'Precio (s/ISV)', ctrlPrecio, precioMostrado, (v) => _precioCarritoConIsv ? _actualizarPrecio(index, v) : _actualizarPrecioSinIsv(index, v))),
+              Expanded(child: _campoInlineConEtiqueta('precio_$index', _precioCarritoConIsv ? 'Precio (c/ISV)' : 'Precio (s/ISV)', ctrlPrecio, precioMostrado, (v) => _precioCarritoConIsv ? _actualizarPrecio(index, v) : _actualizarPrecioSinIsv(index, v))),
               const SizedBox(width: 8),
-              Expanded(child: _campoInlineConEtiqueta('Desc. %', ctrlDescuento, item.descuentoPorcentaje as double, (v) => _actualizarDescuentoLinea(index, v))),
+              Expanded(child: _campoInlineConEtiqueta('descuento_$index', 'Desc. %', ctrlDescuento, item.descuentoPorcentaje as double, (v) => _actualizarDescuentoLinea(index, v))),
             ],
           ),
           const SizedBox(height: 10),

@@ -17,6 +17,7 @@ class AjusteStockDialog extends ConsumerStatefulWidget {
 class _AjusteStockDialogState extends ConsumerState<AjusteStockDialog> {
   late TextEditingController _stockController;
   final _motivoController = TextEditingController();
+  final _costoController = TextEditingController();
   bool _guardando = false;
   String? _error;
 
@@ -30,7 +31,13 @@ class _AjusteStockDialogState extends ConsumerState<AjusteStockDialog> {
   void dispose() {
     _stockController.dispose();
     _motivoController.dispose();
+    _costoController.dispose();
     super.dispose();
+  }
+
+  bool get _esIncremento {
+    final nuevo = double.tryParse(_stockController.text.replaceAll(',', '').trim());
+    return nuevo != null && nuevo > widget.producto.stock;
   }
 
   Future<void> _guardar() async {
@@ -45,12 +52,14 @@ class _AjusteStockDialogState extends ConsumerState<AjusteStockDialog> {
     });
     try {
       final usuario = ref.read(authProvider).usuario;
+      final costoUnitario = _esIncremento ? double.tryParse(_costoController.text.replaceAll(',', '').trim()) : null;
       await ref.read(productoRepositoryProvider).ajustarStock(
         id: widget.producto.id,
         stockActual: widget.producto.stock,
         stockNuevo: nuevoStock,
         usuario: usuario?.nombreCompleto ?? 'Sistema',
         motivo: _motivoController.text.trim(),
+        costoUnitario: costoUnitario,
       );
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -85,6 +94,7 @@ class _AjusteStockDialogState extends ConsumerState<AjusteStockDialog> {
               controller: _stockController,
               keyboardType: TextInputType.number,
               autofocus: true,
+              onChanged: (_) => setState(() {}),
               style: GoogleFonts.poppins(fontSize: 14),
               decoration: InputDecoration(
                 labelText: 'Nueva existencia',
@@ -94,6 +104,24 @@ class _AjusteStockDialogState extends ConsumerState<AjusteStockDialog> {
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               ),
             ),
+            if (_esIncremento) ...[
+              const SizedBox(height: 14),
+              TextField(
+                controller: _costoController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                style: GoogleFonts.poppins(fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: 'Costo unitario (opcional)',
+                  hintText: 'Ej: 0 si te lo regalaron',
+                  labelStyle: GoogleFonts.poppins(fontSize: 13),
+                  filled: true,
+                  fillColor: const Color(0xFFE8EAF0),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text('Si lo dejás vacío, se usa el costo actual del producto.', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500)),
+            ],
             const SizedBox(height: 14),
             TextField(
               controller: _motivoController,

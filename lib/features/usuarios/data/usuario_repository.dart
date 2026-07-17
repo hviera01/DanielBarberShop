@@ -1,14 +1,9 @@
-import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:crypto/crypto.dart';
+import '../../../core/utils/clave_hash.dart';
 import 'usuario_model.dart';
 
 class UsuarioRepository {
   final _col = FirebaseFirestore.instance.collection('usuarios');
-
-  String _hashClave(String clave) {
-    return sha256.convert(utf8.encode(clave)).toString();
-  }
 
   Stream<List<UsuarioModel>> obtenerUsuarios() {
     return _col.orderBy('nombreCompleto').snapshots().map((snap) {
@@ -21,13 +16,16 @@ class UsuarioRepository {
     if (existe.docs.isNotEmpty) {
       throw Exception('El número de documento ya existe');
     }
+    final sal = ClaveHash.generarSal();
     await _col.add({
       'documento': documento,
       'nombreCompleto': nombreCompleto,
       'correo': correo,
-      'clave': _hashClave(clave),
+      'clave': ClaveHash.hash(clave, sal),
+      'sal': sal,
       'rol': rol,
       'estado': estado,
+      'intentosFallidos': 0,
       'fechaRegistro': FieldValue.serverTimestamp(),
     });
   }
@@ -46,7 +44,13 @@ class UsuarioRepository {
       'estado': estado,
     };
     if (clave != null && clave.trim().isNotEmpty) {
-      data['clave'] = _hashClave(clave);
+      // Cambiar la clave desbloquea al usuario y reinicia los intentos
+      // fallidos: es una acción administrativa deliberada.
+      final sal = ClaveHash.generarSal();
+      data['clave'] = ClaveHash.hash(clave, sal);
+      data['sal'] = sal;
+      data['intentosFallidos'] = 0;
+      data['bloqueadoHasta'] = null;
     }
     await _col.doc(id).update(data);
   }

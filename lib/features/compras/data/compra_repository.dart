@@ -2,12 +2,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'compra_model.dart';
 import 'item_compra_model.dart';
 import '../../../core/utils/formato_moneda.dart';
+import '../../productos/data/lote_costo_repository.dart';
 
 class CompraRepository {
   final _db = FirebaseFirestore.instance;
   final _colCompras = FirebaseFirestore.instance.collection('compras');
   final _colContadores = FirebaseFirestore.instance.collection('contadores');
   final _colComprasCredito = FirebaseFirestore.instance.collection('comprasCredito');
+  final _lotes = LoteCostoRepository();
 
   String _formatearCorrelativo(int numero) => numero.toString().padLeft(8, '0');
 
@@ -141,6 +143,20 @@ class CompraRepository {
           'usuario': usuario,
           'fecha': FieldValue.serverTimestamp(),
         });
+
+        // Lote de costo propio para esta compra: es lo que permite que,
+        // si el mismo producto se compró antes a otro precio, cada venta
+        // futura consuma el costo real del lote que le toca (FIFO) en vez
+        // de un costo único por producto.
+        _lotes.crearLote(
+          transaction,
+          item.idProducto,
+          cantidad: item.cantidad,
+          costoUnitario: precioFinalConIsv,
+          fecha: fechaRegistro,
+          origen: 'compra',
+          idCompra: compraRef.id,
+        );
       }
     }, timeout: const Duration(seconds: 12));
 
@@ -224,6 +240,15 @@ class CompraRepository {
       }
     }
 
+    // Ubicar (fuera de la transacción, ya que es una query y no una lectura
+    // por referencia) el lote que generó esta compra en cada producto, para
+    // poder descontarle lo que corresponda al anularla.
+    final loteRefPorProducto = <String, DocumentReference<Map<String, dynamic>>>{};
+    for (final item in items) {
+      final query = await _lotes.colLotes(item.idProducto).where('idCompra', isEqualTo: id).limit(1).get();
+      if (query.docs.isNotEmpty) loteRefPorProducto[item.idProducto] = query.docs.first.reference;
+    }
+
     await _db.runTransaction((transaction) async {
       final stocksActuales = <String, double>{};
       final snapsStock = await Future.wait(
@@ -231,6 +256,13 @@ class CompraRepository {
       );
       for (var i = 0; i < items.length; i++) {
         stocksActuales[items[i].idProducto] = ((snapsStock[i].data()?['stock'] ?? 0) as num).toDouble();
+      }
+
+      // Misma regla de "todas las lecturas antes que cualquier escritura":
+      // se leen ahora (transaccionalmente) los lotes ya ubicados arriba.
+      final loteSnapsPorProducto = <String, DocumentSnapshot<Map<String, dynamic>>>{};
+      for (final entry in loteRefPorProducto.entries) {
+        loteSnapsPorProducto[entry.key] = await transaction.get(entry.value);
       }
 
       transaction.update(_colCompras.doc(id), {
@@ -249,6 +281,17 @@ class CompraRepository {
         final stockActual = stocksActuales[item.idProducto] ?? 0;
         final stockNuevo = stockActual - item.cantidad;
         transaction.update(ref, {'stock': stockNuevo});
+
+        // Caso borde documentado: si ya se vendió parte de este lote antes
+        // de anular la compra, no se puede "des-vender" retroactivamente —
+        // se descuenta como máximo lo que le queda al lote.
+        final loteSnap = loteSnapsPorProducto[item.idProducto];
+        if (loteSnap != null && loteSnap.exists) {
+          final restanteActual = ((loteSnap.data()?['cantidadRestante'] ?? 0) as num).toDouble();
+          final nuevoRestante = restanteActual - item.cantidad;
+          transaction.update(loteSnap.reference, {'cantidadRestante': nuevoRestante < 0 ? 0.0 : nuevoRestante});
+        }
+
         final historialRef = ref.collection('historial').doc();
         transaction.set(historialRef, {
           'stockAnterior': stockActual,

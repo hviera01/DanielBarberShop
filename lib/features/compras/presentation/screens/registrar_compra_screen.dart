@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -36,10 +37,37 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
   final Map<int, TextEditingController> _ctrlDescuento = {};
   final Map<int, TextEditingController> _ctrlMargen = {};
   final Map<int, TextEditingController> _ctrlPrecioVenta = {};
+  // _focusInline y _confirmarInline respaldan a _campoInlineNumero: ver el
+  // comentario junto a esa función para la explicación completa.
+  final Map<String, FocusNode> _focusInline = {};
+  final Map<String, VoidCallback> _confirmarInline = {};
   int _conteoItemsControladores = -1;
 
   @override
+  void initState() {
+    super.initState();
+    // Atajos a nivel de hardware (no de foco): así funcionan sin importar
+    // qué campo de la pantalla tenga el foco en ese momento.
+    HardwareKeyboard.instance.addHandler(_manejarAtajoTeclado);
+  }
+
+  bool _manejarAtajoTeclado(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    if (!mounted || _guardando) return false;
+    if (event.logicalKey == LogicalKeyboardKey.f10) {
+      _agregarProductoDesdeBusqueda();
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.f12) {
+      _confirmarCompra();
+      return true;
+    }
+    return false;
+  }
+
+  @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_manejarAtajoTeclado);
     _noFacturaController.dispose();
     _descuentoGlobalController.dispose();
     _isvController.dispose();
@@ -58,6 +86,9 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
     }
     for (final c in _ctrlPrecioVenta.values) {
       c.dispose();
+    }
+    for (final f in _focusInline.values) {
+      f.dispose();
     }
     super.dispose();
   }
@@ -621,6 +652,11 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
       _ctrlDescuento.clear();
       _ctrlMargen.clear();
       _ctrlPrecioVenta.clear();
+      for (final f in _focusInline.values) {
+        f.dispose();
+      }
+      _focusInline.clear();
+      _confirmarInline.clear();
       _conteoItemsControladores = carrito.items.length;
     }
 
@@ -722,15 +758,37 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
     );
   }
 
-  Widget _campoInlineNumero(TextEditingController controlador, double valorActual, void Function(double) alConfirmar, {String? sufijo}) {
+  // [claveFoco] identifica el campo (p.ej. "cantidad_2") para cachear su
+  // FocusNode entre reconstrucciones. Antes esto confirmaba solo al enviar
+  // (onSubmitted) o al tocar literalmente fuera del campo (onTapOutside): en
+  // el celular, si el usuario tocaba un botón directamente (sin pasar antes
+  // por un área vacía), el valor tecleado se perdía. Ahora se confirma al
+  // perder el foco por cualquier motivo (FocusNode.addListener), que es lo
+  // único que cubre "cualquier forma de salir del campo". El listener del
+  // FocusNode se crea una sola vez (putIfAbsent) pero llama indirectamente a
+  // través de _confirmarInline[claveFoco], que se refresca en cada build:
+  // así siempre usa el [valorActual]/[alConfirmar] vigentes en vez de quedar
+  // atado a los del primer build (que sería el bug si el listener capturara
+  // esos parámetros directamente).
+  Widget _campoInlineNumero(String claveFoco, TextEditingController controlador, double valorActual, void Function(double) alConfirmar, {String? sufijo}) {
     void confirmar() {
       final valor = double.tryParse(controlador.text.replaceAll(',', '').trim());
       if (valor == null || (valor - valorActual).abs() < 0.005) return;
       alConfirmar(valor);
     }
+    _confirmarInline[claveFoco] = confirmar;
+
+    final focusNode = _focusInline.putIfAbsent(claveFoco, () {
+      final node = FocusNode();
+      node.addListener(() {
+        if (!node.hasFocus) _confirmarInline[claveFoco]?.call();
+      });
+      return node;
+    });
 
     return TextField(
       controller: controlador,
+      focusNode: focusNode,
       textAlign: TextAlign.center,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       style: GoogleFonts.poppins(fontSize: 13),
@@ -743,20 +801,17 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       ),
       onSubmitted: (_) => confirmar(),
-      onTapOutside: (_) {
-        FocusManager.instance.primaryFocus?.unfocus();
-        confirmar();
-      },
+      onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
     );
   }
 
-  Widget _campoInlineConEtiqueta(String etiqueta, TextEditingController controlador, double valorActual, void Function(double) alConfirmar) {
+  Widget _campoInlineConEtiqueta(String claveFoco, String etiqueta, TextEditingController controlador, double valorActual, void Function(double) alConfirmar) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(etiqueta, style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey.shade500)),
         const SizedBox(height: 4),
-        _campoInlineNumero(controlador, valorActual, alConfirmar),
+        _campoInlineNumero(claveFoco, controlador, valorActual, alConfirmar),
       ],
     );
   }
@@ -782,9 +837,9 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
                 flex: 4,
                 child: Text(item.nombreProducto as String, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
               ),
-              Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v)))),
-              Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlPrecio, item.precioCompra as double, (v) => _actualizarPrecio(index, v)))),
-              Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero(ctrlDescuento, item.descuentoPorcentaje as double, (v) => _actualizarDescuentoLinea(index, v), sufijo: '%'))),
+              Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero('cantidad_$index', ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v)))),
+              Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero('precio_$index', ctrlPrecio, item.precioCompra as double, (v) => _actualizarPrecio(index, v)))),
+              Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero('descuento_$index', ctrlDescuento, item.descuentoPorcentaje as double, (v) => _actualizarDescuentoLinea(index, v), sufijo: '%'))),
               Expanded(flex: 2, child: Text(formatearMoneda(_descuentoLineaMonto(item)), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade600))),
               Expanded(flex: 2, child: Text(formatearMoneda(item.subtotal as double), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700))),
               SizedBox(
@@ -798,8 +853,8 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
             child: Row(
               children: [
                 const Spacer(flex: 6),
-                Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineConEtiqueta('Margen %', ctrlMargen, _margenActual(item), (v) => _actualizarMargenCompra(index, v)))),
-                Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineConEtiqueta('Precio de venta', ctrlPrecioVenta, (item.precioVentaNuevo as double?) ?? 0, (v) => _actualizarPrecioVentaCompra(index, v)))),
+                Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineConEtiqueta('margen_$index', 'Margen %', ctrlMargen, _margenActual(item), (v) => _actualizarMargenCompra(index, v)))),
+                Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineConEtiqueta('precioVenta_$index', 'Precio de venta', ctrlPrecioVenta, (item.precioVentaNuevo as double?) ?? 0, (v) => _actualizarPrecioVentaCompra(index, v)))),
                 const Spacer(flex: 4),
                 const SizedBox(width: 40),
               ],
@@ -842,19 +897,19 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(child: _campoInlineConEtiqueta('Cantidad', ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v))),
+              Expanded(child: _campoInlineConEtiqueta('cantidad_$index', 'Cantidad', ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v))),
               const SizedBox(width: 8),
-              Expanded(child: _campoInlineConEtiqueta('Costo unitario', ctrlPrecio, item.precioCompra as double, (v) => _actualizarPrecio(index, v))),
+              Expanded(child: _campoInlineConEtiqueta('precio_$index', 'Costo unitario', ctrlPrecio, item.precioCompra as double, (v) => _actualizarPrecio(index, v))),
               const SizedBox(width: 8),
-              Expanded(child: _campoInlineConEtiqueta('Desc. %', ctrlDescuento, item.descuentoPorcentaje as double, (v) => _actualizarDescuentoLinea(index, v))),
+              Expanded(child: _campoInlineConEtiqueta('descuento_$index', 'Desc. %', ctrlDescuento, item.descuentoPorcentaje as double, (v) => _actualizarDescuentoLinea(index, v))),
             ],
           ),
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(child: _campoInlineConEtiqueta('Margen %', ctrlMargen, _margenActual(item), (v) => _actualizarMargenCompra(index, v))),
+              Expanded(child: _campoInlineConEtiqueta('margen_$index', 'Margen %', ctrlMargen, _margenActual(item), (v) => _actualizarMargenCompra(index, v))),
               const SizedBox(width: 8),
-              Expanded(child: _campoInlineConEtiqueta('Precio de venta', ctrlPrecioVenta, (item.precioVentaNuevo as double?) ?? 0, (v) => _actualizarPrecioVentaCompra(index, v))),
+              Expanded(child: _campoInlineConEtiqueta('precioVenta_$index', 'Precio de venta', ctrlPrecioVenta, (item.precioVentaNuevo as double?) ?? 0, (v) => _actualizarPrecioVentaCompra(index, v))),
             ],
           ),
           const SizedBox(height: 10),

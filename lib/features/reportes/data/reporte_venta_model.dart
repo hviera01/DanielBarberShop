@@ -15,6 +15,7 @@ class ReporteVentaModel {
   final String condicion;
   final DateTime? fechaVencimiento;
   final String estado;
+  final bool pendienteImpresion;
 
   ReporteVentaModel({
     required this.id,
@@ -31,6 +32,7 @@ class ReporteVentaModel {
     required this.condicion,
     required this.fechaVencimiento,
     required this.estado,
+    this.pendienteImpresion = false,
   });
 
   bool get esActiva => estado == 'Activa';
@@ -52,6 +54,7 @@ class ReporteVentaModel {
       condicion: data['condicion'] ?? '',
       fechaVencimiento: (data['fechaVencimiento'] as Timestamp?)?.toDate(),
       estado: data['estado'] ?? 'Activa',
+      pendienteImpresion: data['pendienteImpresion'] ?? false,
     );
   }
 

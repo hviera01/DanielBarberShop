@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/services/impresora_red_service.dart';
 import '../../data/negocio_model.dart';
 import '../../providers/negocio_provider.dart';
 import '../widgets/negocio_logo_picker.dart';
@@ -45,11 +47,16 @@ class _NegocioFormState extends ConsumerState<_NegocioForm> {
   final _rangoDesdeController = TextEditingController();
   final _rangoHastaController = TextEditingController();
   final _claveController = TextEditingController();
+  final _ipRedController = TextEditingController();
+  final _puertoRedController = TextEditingController();
+  final _servicioImpresoraRed = ImpresoraRedService();
 
   DateTime? _fechaLimite;
   late Map<String, bool> _permisos;
   bool _guardando = false;
   bool _guardandoClave = false;
+  bool _guardandoRed = false;
+  bool _probandoRed = false;
   String? _error;
 
   @override
@@ -68,6 +75,8 @@ class _NegocioFormState extends ConsumerState<_NegocioForm> {
     _rangoHastaController.text = m.rangoHasta;
     _fechaLimite = m.fechaLimiteEmision;
     _permisos = Map<String, bool>.from(m.permisos);
+    _ipRedController.text = m.impresoraRedIp;
+    _puertoRedController.text = m.impresoraRedPuerto.toString();
   }
 
   @override
@@ -83,6 +92,8 @@ class _NegocioFormState extends ConsumerState<_NegocioForm> {
     _rangoDesdeController.dispose();
     _rangoHastaController.dispose();
     _claveController.dispose();
+    _ipRedController.dispose();
+    _puertoRedController.dispose();
     super.dispose();
   }
 
@@ -163,6 +174,40 @@ class _NegocioFormState extends ConsumerState<_NegocioForm> {
   void _alternarPermiso(String key, bool valor) {
     setState(() => _permisos[key] = valor);
     ref.read(negocioRepositoryProvider).actualizarPermisos(_permisos);
+  }
+
+  Future<void> _guardarImpresoraRed() async {
+    final ip = _ipRedController.text.trim();
+    final puerto = int.tryParse(_puertoRedController.text.trim()) ?? 9100;
+    setState(() => _guardandoRed = true);
+    try {
+      await ref.read(negocioRepositoryProvider).actualizarImpresoraRed(ip, puerto);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Impresora de red guardada')));
+    } finally {
+      if (mounted) setState(() => _guardandoRed = false);
+    }
+  }
+
+  Future<void> _probarImpresoraRed() async {
+    final ip = _ipRedController.text.trim();
+    final puerto = int.tryParse(_puertoRedController.text.trim()) ?? 9100;
+    if (ip.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ingresá la IP de la impresora primero')));
+      return;
+    }
+    setState(() => _probandoRed = true);
+    try {
+      // ESC @ (inicializar impresora): no imprime nada visible, solo
+      // confirma que la impresora respondió en esa IP/puerto sin gastar
+      // papel en cada prueba de conexión.
+      final ok = await _servicioImpresoraRed.imprimir(ip: ip, puerto: puerto, bytes: const [0x1B, 0x40]);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? 'Conexión exitosa' : 'No se pudo conectar a esa IP/puerto')),
+      );
+    } finally {
+      if (mounted) setState(() => _probandoRed = false);
+    }
   }
 
   @override
@@ -469,6 +514,85 @@ class _NegocioFormState extends ConsumerState<_NegocioForm> {
               ),
             ],
           ),
+          const SizedBox(height: 20),
+          Divider(color: Colors.grey.shade200),
+          const SizedBox(height: 14),
+          _filaSwitchFactura(
+            titulo: 'Imprimir directo, sin preguntar',
+            descripcion:
+                'Al confirmar una venta facturable se imprime directo en la impresora configurada, sin mostrar el diálogo de vista previa/descargar. Si no hay impresora configurada, la venta se guarda igual y no se bloquea nada.',
+            valor: widget.modelo.modoImpresion == ModoImpresion.directo,
+            onChanged: (v) => ref.read(negocioRepositoryProvider).establecerModoImpresion(v ? ModoImpresion.directo : ModoImpresion.preguntar),
+          ),
+          const SizedBox(height: 20),
+          Divider(color: Colors.grey.shade200),
+          const SizedBox(height: 14),
+          Text('Impresora térmica de red (para celular)', style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w600, color: const Color(0xFF1A1A1A))),
+          const SizedBox(height: 4),
+          Text(
+            'En el celular no se pueden listar las impresoras del sistema. Si tu impresora térmica está conectada a la misma red WiFi, ingresá su IP acá: la venta se manda a imprimir directo por esa dirección.',
+            style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 12),
+          if (kIsWeb)
+            Text('No disponible en la versión web (el navegador no permite esta conexión directa).', style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade500))
+          else
+            Flex(
+              direction: esMovil ? Axis.vertical : Axis.horizontal,
+              crossAxisAlignment: esMovil ? CrossAxisAlignment.stretch : CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: _ipRedController,
+                    style: GoogleFonts.poppins(fontSize: 13),
+                    decoration: InputDecoration(
+                      labelText: 'IP de la impresora',
+                      hintText: '192.168.1.50',
+                      filled: true,
+                      fillColor: const Color(0xFFE8EAF0),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    ),
+                  ),
+                ),
+                SizedBox(width: esMovil ? 0 : 12, height: esMovil ? 12 : 0),
+                Expanded(
+                  child: TextField(
+                    controller: _puertoRedController,
+                    keyboardType: TextInputType.number,
+                    style: GoogleFonts.poppins(fontSize: 13),
+                    decoration: InputDecoration(
+                      labelText: 'Puerto',
+                      filled: true,
+                      fillColor: const Color(0xFFE8EAF0),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    ),
+                  ),
+                ),
+                SizedBox(width: esMovil ? 0 : 12, height: esMovil ? 12 : 0),
+                SizedBox(
+                  height: 48,
+                  child: OutlinedButton(
+                    onPressed: _probandoRed ? null : _probarImpresoraRed,
+                    style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    child: _probandoRed
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : Text('Probar', style: GoogleFonts.poppins(fontSize: 13)),
+                  ),
+                ),
+                SizedBox(width: esMovil ? 0 : 12, height: esMovil ? 12 : 0),
+                SizedBox(
+                  height: 48,
+                  child: FilledButton(
+                    onPressed: _guardandoRed ? null : _guardarImpresoraRed,
+                    style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0F1B3D), padding: const EdgeInsets.symmetric(horizontal: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    child: _guardandoRed
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : Text('Guardar', style: GoogleFonts.poppins(fontSize: 13, color: Colors.white)),
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );

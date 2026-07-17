@@ -145,6 +145,13 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
     }
   }
 
+  Future<void> _marcarComoImpresa() async {
+    final venta = _venta;
+    if (venta == null) return;
+    await ref.read(ventaRepositoryProvider).marcarPendienteImpresion(venta.id, false);
+    if (mounted) await _buscarPorId(venta.id);
+  }
+
   Future<void> _descargarPdf() async {
     final venta = _venta;
     if (venta == null) return;
@@ -365,6 +372,10 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
           _bannerAnulada(venta, formatoDia),
           const SizedBox(height: 14),
         ],
+        if (venta.pendienteImpresion) ...[
+          _bannerPendienteImpresion(),
+          const SizedBox(height: 14),
+        ],
         _tarjeta(
           child: Wrap(
             spacing: 24,
@@ -470,6 +481,32 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
     );
   }
 
+  Widget _bannerPendienteImpresion() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(color: const Color(0xFFFFF4E0), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFE0A63C))),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(Icons.print_disabled_outlined, color: Color(0xFF9A6B0F)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Esta venta se guardó sin imprimir (probablemente desde el celular, sin la impresora a mano). Usá "Reimprimir" cuando tengas la impresora disponible.',
+              style: GoogleFonts.poppins(fontSize: 12.5, color: const Color(0xFF9A6B0F)),
+            ),
+          ),
+          const SizedBox(width: 12),
+          TextButton(
+            onPressed: _marcarComoImpresa,
+            child: Text('Marcar como impresa', style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: FontWeight.w600, color: const Color(0xFF9A6B0F))),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _tarjeta({required Widget child}) {
     return Container(
       width: double.infinity,
@@ -554,6 +591,8 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(item.nombreProducto, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+                      if (item.nombreOriginal.isNotEmpty)
+                        Text('Editado (antes: ${item.nombreOriginal})', style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.orange.shade800)),
                       if (item.reembasado) Text('Reembasado', style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.grey.shade400)),
                       if (item.descuentoPorcentaje > 0) Text('Descuento ${_formatoCantidad(item.descuentoPorcentaje)}%', style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.grey.shade400)),
                     ],
@@ -581,6 +620,8 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(item.nombreProducto, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                if (item.nombreOriginal.isNotEmpty)
+                  Text('Editado (antes: ${item.nombreOriginal})', style: GoogleFonts.poppins(fontSize: 11, color: Colors.orange.shade800)),
                 if (item.reembasado || item.descuentoPorcentaje > 0)
                   Text(
                     [if (item.reembasado) 'Reembasado', if (item.descuentoPorcentaje > 0) 'Descuento ${_formatoCantidad(item.descuentoPorcentaje)}%'].join(' · '),

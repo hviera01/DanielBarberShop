@@ -5,12 +5,14 @@ class PermisosEspeciales {
   static const inventarioAjustarStock = 'inventario_ajustar_stock';
   static const ventasCreditoEliminar = 'ventas_credito_eliminar';
   static const ventasCambiarPrecio = 'ventas_cambiar_precio';
+  static const ventasEditarDescripcion = 'ventas_editar_descripcion';
 
   static const Map<String, String> etiquetas = {
     inventarioEditarProducto: 'Editar productos en Inventario',
     inventarioAjustarStock: 'Cambiar existencias en Inventario',
     ventasCreditoEliminar: 'Eliminar créditos en Ventas a Crédito',
     ventasCambiarPrecio: 'Cambiar precio de un producto en Ventas',
+    ventasEditarDescripcion: 'Editar descripción de un producto en Ventas',
   };
 
   static const Map<String, String> descripciones = {
@@ -18,7 +20,15 @@ class PermisosEspeciales {
     inventarioAjustarStock: 'Pide la clave especial antes de confirmar un ajuste de existencia.',
     ventasCreditoEliminar: 'Pide la clave especial antes de eliminar un crédito.',
     ventasCambiarPrecio: 'Pide la clave especial antes de modificar el precio unitario de un producto dentro de una venta.',
+    ventasEditarDescripcion: 'Pide la clave especial antes de cambiar la descripción de un producto dentro de una venta.',
   };
+}
+
+/// Cómo se maneja la impresión de la factura al confirmar una venta
+/// facturable (ver ModoImpresion.preguntar/directo).
+class ModoImpresion {
+  static const preguntar = 'preguntar';
+  static const directo = 'directo';
 }
 
 class NegocioModel {
@@ -49,6 +59,15 @@ class NegocioModel {
   // en Registrar Venta). Si es false (default, comportamiento de siempre)
   // se muestran sin ISV, con el ISV desglosado aparte en el total.
   final bool facturaPreciosConIsv;
+  // ModoImpresion.preguntar (default, comportamiento de siempre) muestra el
+  // diálogo de vista previa/descargar/imprimir; ModoImpresion.directo salta
+  // ese diálogo e imprime directo en la impresora configurada.
+  final String modoImpresion;
+  // Impresora térmica de red (ESC/POS por socket TCP): la vía que sí
+  // funciona desde el celular, donde no hay forma de listar impresoras del
+  // sistema operativo.
+  final String impresoraRedIp;
+  final int impresoraRedPuerto;
 
   const NegocioModel({
     this.nombre = '',
@@ -72,6 +91,9 @@ class NegocioModel {
     this.impresoraEtiquetasNombre = '',
     this.facturaImprimirCopia = true,
     this.facturaPreciosConIsv = false,
+    this.modoImpresion = ModoImpresion.preguntar,
+    this.impresoraRedIp = '',
+    this.impresoraRedPuerto = 9100,
   });
 
   bool get tieneClaveEspecial => claveEspecialHash.isNotEmpty;
@@ -102,6 +124,9 @@ class NegocioModel {
       impresoraEtiquetasNombre: data['impresoraEtiquetasNombre'] ?? '',
       facturaImprimirCopia: data['facturaImprimirCopia'] ?? true,
       facturaPreciosConIsv: data['facturaPreciosConIsv'] ?? false,
+      modoImpresion: data['modoImpresion'] ?? ModoImpresion.preguntar,
+      impresoraRedIp: data['impresoraRedIp'] ?? '',
+      impresoraRedPuerto: ((data['impresoraRedPuerto'] ?? 9100) as num).toInt(),
     );
   }
 
@@ -128,6 +153,9 @@ class NegocioModel {
       'impresoraEtiquetasNombre': impresoraEtiquetasNombre,
       'facturaImprimirCopia': facturaImprimirCopia,
       'facturaPreciosConIsv': facturaPreciosConIsv,
+      'modoImpresion': modoImpresion,
+      'impresoraRedIp': impresoraRedIp,
+      'impresoraRedPuerto': impresoraRedPuerto,
     };
   }
 
@@ -147,8 +175,15 @@ class NegocioModel {
     String? logoBnBase64,
     String? claveEspecialHash,
     Map<String, bool>? permisos,
+    String? impresoraTermicaUrl,
+    String? impresoraTermicaNombre,
+    String? impresoraEtiquetasUrl,
+    String? impresoraEtiquetasNombre,
     bool? facturaImprimirCopia,
     bool? facturaPreciosConIsv,
+    String? modoImpresion,
+    String? impresoraRedIp,
+    int? impresoraRedPuerto,
   }) {
     return NegocioModel(
       nombre: nombre ?? this.nombre,
@@ -166,12 +201,15 @@ class NegocioModel {
       logoBnBase64: logoBnBase64 ?? this.logoBnBase64,
       claveEspecialHash: claveEspecialHash ?? this.claveEspecialHash,
       permisos: permisos ?? this.permisos,
-      impresoraTermicaUrl: impresoraTermicaUrl,
-      impresoraTermicaNombre: impresoraTermicaNombre,
-      impresoraEtiquetasUrl: impresoraEtiquetasUrl,
-      impresoraEtiquetasNombre: impresoraEtiquetasNombre,
+      impresoraTermicaUrl: impresoraTermicaUrl ?? this.impresoraTermicaUrl,
+      impresoraTermicaNombre: impresoraTermicaNombre ?? this.impresoraTermicaNombre,
+      impresoraEtiquetasUrl: impresoraEtiquetasUrl ?? this.impresoraEtiquetasUrl,
+      impresoraEtiquetasNombre: impresoraEtiquetasNombre ?? this.impresoraEtiquetasNombre,
       facturaImprimirCopia: facturaImprimirCopia ?? this.facturaImprimirCopia,
       facturaPreciosConIsv: facturaPreciosConIsv ?? this.facturaPreciosConIsv,
+      modoImpresion: modoImpresion ?? this.modoImpresion,
+      impresoraRedIp: impresoraRedIp ?? this.impresoraRedIp,
+      impresoraRedPuerto: impresoraRedPuerto ?? this.impresoraRedPuerto,
     );
   }
 }

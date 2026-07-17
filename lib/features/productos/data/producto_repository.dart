@@ -4,6 +4,7 @@ import 'producto_import_service.dart';
 import 'historial_stock_model.dart';
 import 'historial_precio_compra_model.dart';
 import 'historial_venta_producto_model.dart';
+import 'lote_costo_repository.dart';
 
 class ResumenImportacionProductos {
   final int creados;
@@ -207,24 +208,52 @@ class ProductoRepository {
     return ResumenImportacionProductos(creados: creados, actualizados: actualizados, categoriasCreadas: categoriasCreadas);
   }
 
+  /// Ajusta el stock a mano (Inventario). Si sube existencia, [costoUnitario]
+  /// permite registrar a qué costo entró ese stock (por ejemplo 0 si lo
+  /// regalaron): crea un lote de costo nuevo con ese valor, o con el
+  /// `precioCompra` vigente del producto si no se indica. Si baja
+  /// existencia, consume lotes por FIFO igual que una venta, para que la
+  /// cantidad restante sumada en los lotes no se desalinee del stock total.
   Future<void> ajustarStock({
     required String id,
     required double stockActual,
     required double stockNuevo,
     required String usuario,
     String motivo = '',
+    double? costoUnitario,
   }) async {
-    final batch = FirebaseFirestore.instance.batch();
-    batch.update(_col.doc(id), {'stock': stockNuevo});
-    final historialRef = _col.doc(id).collection('historial').doc();
-    batch.set(historialRef, {
-      'stockAnterior': stockActual,
-      'stockNuevo': stockNuevo,
-      'usuario': usuario,
-      'motivo': motivo,
-      'fecha': FieldValue.serverTimestamp(),
+    final ref = _col.doc(id);
+    final lotes = LoteCostoRepository();
+    final esIncremento = stockNuevo > stockActual;
+    final diferencia = (stockNuevo - stockActual).abs();
+
+    await FirebaseFirestore.instance.runTransaction((transaction) async {
+      final snap = await transaction.get(ref);
+      final precioCompraActual = ((snap.data()?['precioCompra'] ?? 0) as num).toDouble();
+
+      EstadoLotesProducto? estadoLotes;
+      if (!esIncremento && diferencia > 0) {
+        final snapsLotes = await lotes.leerLotesTransaccional(transaction, id);
+        estadoLotes = lotes.inicializarEstado(snapsLotes);
+        lotes.consumir(estadoLotes, diferencia, costoFallback: precioCompraActual);
+      }
+
+      transaction.update(ref, {'stock': stockNuevo});
+      final historialRef = ref.collection('historial').doc();
+      transaction.set(historialRef, {
+        'stockAnterior': stockActual,
+        'stockNuevo': stockNuevo,
+        'usuario': usuario,
+        'motivo': motivo,
+        'fecha': FieldValue.serverTimestamp(),
+      });
+
+      if (esIncremento && diferencia > 0) {
+        lotes.crearLote(transaction, id, cantidad: diferencia, costoUnitario: costoUnitario ?? precioCompraActual, fecha: DateTime.now(), origen: 'ajuste');
+      } else if (estadoLotes != null) {
+        lotes.aplicarEstado(transaction, estadoLotes);
+      }
     });
-    await batch.commit();
   }
 
   /// Descuenta stock de un producto de forma atómica (lee el stock actual y lo decrementa),

@@ -29,6 +29,10 @@ service cloud.firestore {
       match /historialVentas/{idHistorial} {
         allow read, write: if true;
       }
+
+      match /lotes/{idLote} {
+        allow read, write: if true;
+      }
     }
 
     match /configuracion/{idDocumento} {

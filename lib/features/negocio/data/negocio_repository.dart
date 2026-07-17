@@ -135,4 +135,14 @@ class NegocioRepository {
     await _doc.set({'facturaPreciosConIsv': valor}, SetOptions(merge: true));
     _invalidarCache();
   }
+
+  Future<void> establecerModoImpresion(String modo) async {
+    await _doc.set({'modoImpresion': modo}, SetOptions(merge: true));
+    _invalidarCache();
+  }
+
+  Future<void> actualizarImpresoraRed(String ip, int puerto) async {
+    await _doc.set({'impresoraRedIp': ip, 'impresoraRedPuerto': puerto}, SetOptions(merge: true));
+    _invalidarCache();
+  }
 }

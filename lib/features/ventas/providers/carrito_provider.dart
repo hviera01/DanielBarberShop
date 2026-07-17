@@ -163,12 +163,29 @@ class CarritoVentaNotifier extends Notifier<CarritoVentaState> {
       idProducto: actual.idProducto,
       idCategoria: actual.idCategoria,
       nombreProducto: actual.nombreProducto,
+      nombreOriginal: actual.nombreOriginal,
       precioVenta: nuevoPrecio,
       cantidad: nuevaCantidad,
       subtotal: _subtotalLinea(nuevoPrecio, nuevaCantidad, nuevoDescuento),
       precioCompraUsado: actual.precioCompraUsado,
       reembasado: reembasado ?? actual.reembasado,
       descuentoPorcentaje: nuevoDescuento,
+    );
+    state = state.copyWith(items: nuevos);
+  }
+
+  /// Cambia la descripción mostrada/impresa de una línea del carrito (no
+  /// afecta el producto real). Si el nuevo texto difiere del nombre real del
+  /// producto, [nombreOriginal] guarda ese nombre real para poder avisar en
+  /// el ticket y en el detalle de la venta que la descripción fue editada.
+  void actualizarDescripcion(int index, String nuevaDescripcion, String nombreRealProducto) {
+    final texto = nuevaDescripcion.trim();
+    if (texto.isEmpty) return;
+    final actual = state.items[index];
+    final nuevos = [...state.items];
+    nuevos[index] = actual.copyWith(
+      nombreProducto: texto,
+      nombreOriginal: texto == nombreRealProducto ? '' : nombreRealProducto,
     );
     state = state.copyWith(items: nuevos);
   }

@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Necesario para mandar el ticket de venta por socket TCP a una
+         impresora térmica en la red WiFi local (ver ImpresoraRedService). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="sistema_ventas"
         android:name="${applicationName}"

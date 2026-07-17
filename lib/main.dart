@@ -8,6 +8,7 @@ import 'firebase_options.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'features/auth/presentation/screens/login_screen.dart';
 import 'core/widgets/app_shell.dart';
+import 'core/widgets/splash_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,7 +59,7 @@ class SistemaVentasApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: const AuthGate(),
+      home: const SplashScreen(siguiente: AuthGate()),
     );
   }
 }

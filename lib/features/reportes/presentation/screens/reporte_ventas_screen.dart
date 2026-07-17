@@ -437,6 +437,7 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
                     if (mostrarCondicion) _celdaHeader('CONDICIÓN', 2),
                     if (mostrarUsuario) _celdaHeader('USUARIO', 2),
                     _celdaHeader('ESTADO', 2),
+                    const SizedBox(width: 24),
                   ],
                 ),
               );
@@ -460,6 +461,12 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
                         if (mostrarCondicion) _celda(2, v.condicion, gris: true),
                         if (mostrarUsuario) _celda(2, v.usuarioRegistro, gris: true),
                         Expanded(flex: 2, child: _chipEstado(v)),
+                        SizedBox(
+                          width: 24,
+                          child: v.pendienteImpresion
+                              ? Tooltip(message: 'Pendiente de impresión', child: Icon(Icons.print_disabled_outlined, size: 16, color: Colors.amber.shade800))
+                              : null,
+                        ),
                       ],
                     ),
                   ),
@@ -530,6 +537,19 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
                     _chipEstado(v),
                     _chipInfo('Pago', v.metodoPago),
                     _chipInfo('Fecha', v.fechaRegistro != null ? formatoFecha.format(v.fechaRegistro!) : '-'),
+                    if (v.pendienteImpresion)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.amber.shade200)),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.print_disabled_outlined, size: 13, color: Colors.amber.shade800),
+                            const SizedBox(width: 4),
+                            Text('Pendiente de impresión', style: GoogleFonts.poppins(fontSize: 11, color: Colors.amber.shade900)),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ],
