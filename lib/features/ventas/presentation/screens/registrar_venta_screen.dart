@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,6 +28,7 @@ import '../widgets/buscar_cliente_dialog.dart';
 import '../widgets/reembase_dialog.dart';
 import '../widgets/cobrar_dialog.dart';
 import '../widgets/ventas_en_espera_dialog.dart';
+import '../widgets/ventas_pendientes_impresion_dialog.dart';
 import 'detalle_venta_screen.dart';
 
 const _metodosPago = ['Efectivo', 'Tarjeta', 'Transferencia'];
@@ -425,6 +426,10 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     _limpiarTodo();
   }
 
+  void _verPendientesImpresion() {
+    showDialog(context: context, builder: (context) => const VentasPendientesImpresionDialog());
+  }
+
   Future<void> _verEnEspera() async {
     final sesion = await showDialog<VentaEnEsperaModel>(context: context, builder: (context) => const VentasEnEsperaDialog());
     if (sesion == null || !mounted) return;
@@ -567,9 +572,13 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       _limpiarTodo();
 
       if (esFacturable) {
-        final negocio = await ref.read(negocioRepositoryProvider).obtenerNegocioActual();
-        if (!mounted) return;
-        await _manejarImpresion(venta, negocio);
+        // La venta ya quedó guardada en Firestore en este punto: lo que
+        // sigue es solo imprimir/mostrar el ticket, así que no se espera
+        // (no `await`) para soltar la pantalla — que se sienta instantánea
+        // es más importante que ver el resultado de la impresión al toque.
+        // Si algo de esto falla, igual se avisa con un SnackBar cuando
+        // termine, unos instantes después.
+        unawaited(_imprimirEnSegundoPlano(venta));
       } else {
         _mostrarMensaje('${_tiposDocumento[venta.tipoDocumento]} generada: ${venta.numeroDocumento}');
       }
@@ -580,6 +589,17 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     } finally {
       if (mounted) setState(() => _guardando = false);
     }
+  }
+
+  // Wrapper para llamar a _manejarImpresion sin bloquear _confirmarVenta
+  // (se llama con `unawaited`, ver ahí). También necesita traer la
+  // configuración del negocio, que normalmente ya está en caché (se
+  // precarga al iniciar sesión) y resuelve casi al instante, pero por las
+  // dudas tampoco se espera desde _confirmarVenta.
+  Future<void> _imprimirEnSegundoPlano(VentaModel venta) async {
+    final negocio = await ref.read(negocioRepositoryProvider).obtenerNegocioActual();
+    if (!mounted) return;
+    await _manejarImpresion(venta, negocio);
   }
 
   // Decide cómo imprimir (o no) la venta recién registrada, según
@@ -609,6 +629,25 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
           impresora: impresora,
         ),
       );
+      return;
+    }
+
+    // defaultTargetPlatform (a diferencia de Platform.isAndroid, que en web
+    // no sirve de nada) sí detecta el sistema operativo real del equipo
+    // aunque se esté usando desde el navegador: hace falta para distinguir
+    // "celular entrando por el navegador" de "PC entrando por el navegador".
+    final esMovil = defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
+
+    if (kIsWeb && esMovil) {
+      // Desde el navegador del celular no hay forma de mandar el ticket a
+      // una impresora térmica: los navegadors no dan acceso a sockets
+      // crudos (lo que usa la impresora de red) ni, para una impresora
+      // térmica típica, hay un diálogo de impresión del sistema operativo
+      // que la alcance. En vez de intentarlo y fallar en silencio, se marca
+      // pendiente de una vez para poder reimprimirla después desde un
+      // equipo que sí pueda.
+      _mostrarMensaje('No se puede imprimir directo desde el navegador del celular: la venta quedó pendiente de impresión');
+      await ref.read(ventaRepositoryProvider).marcarPendienteImpresion(venta.id, true);
       return;
     }
 
@@ -747,9 +786,22 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
           label: Text('Ver Detalle', style: GoogleFonts.poppins(fontSize: 13)),
           style: _estiloBotonSecundario(),
         ),
+        Badge(
+          label: Text('$_cantidadPendientesImpresion'),
+          backgroundColor: const Color(0xFFE0A63C),
+          isLabelVisible: _cantidadPendientesImpresion > 0,
+          child: OutlinedButton.icon(
+            onPressed: _verPendientesImpresion,
+            icon: const Icon(Icons.print_disabled_outlined, size: 18),
+            label: Text('Pendientes de Impresión', style: GoogleFonts.poppins(fontSize: 13)),
+            style: _estiloBotonSecundario(),
+          ),
+        ),
       ],
     );
   }
+
+  int get _cantidadPendientesImpresion => ref.watch(ventasPendientesImpresionStreamProvider).value?.length ?? 0;
 
   void _verDetalleVenta() {
     Navigator.of(context).push(

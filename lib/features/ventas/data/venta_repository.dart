@@ -372,6 +372,18 @@ class VentaRepository {
     });
   }
 
+  /// Ventas guardadas pero sin imprimir (típicamente hechas desde el
+  /// celular sin la impresora a mano). Sin `orderBy` a propósito -filtrar
+  /// por `pendienteImpresion` y además ordenar por fecha pediría un índice
+  /// compuesto en Firestore- así que el orden se resuelve acá en memoria.
+  Stream<List<VentaModel>> obtenerVentasPendientesImpresion() {
+    return _colVentas.where('pendienteImpresion', isEqualTo: true).snapshots().map((snap) {
+      final ventas = snap.docs.map((d) => VentaModel.fromMap(d.id, d.data(), const [])).toList();
+      ventas.sort((a, b) => (b.fechaRegistro ?? DateTime(0)).compareTo(a.fechaRegistro ?? DateTime(0)));
+      return ventas;
+    });
+  }
+
   Future<String> guardarVentaEnEspera(VentaEnEsperaModel sesion) async {
     final ref = await _colEspera.add(sesion.toMap());
     return ref.id;
