@@ -31,6 +31,10 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
   final _busquedaController = TextEditingController();
   final _focusNodeLista = FocusNode();
   String _busquedaAplicada = '';
+  // Cuando la búsqueda viene de escanear un código de barras se filtra por
+  // coincidencia exacta de código, no con el buscador difuso (que con
+  // códigos largos puede "acercarse" a varios productos distintos).
+  bool _busquedaExacta = false;
   List<ProductoModel> _listaActual = [];
   String? _filaSeleccionada;
   int _nivelActivo = 1;
@@ -116,18 +120,24 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
   /// tocar el botón de buscar. Si el texto tiene una sola coincidencia (por
   /// ejemplo, un código exacto leído con lector de código de barras) se
   /// agrega directo, sin necesidad de un segundo Enter para confirmar.
-  void _buscar() {
+  void _buscar({bool exacta = false}) {
     final texto = _busquedaController.text.trim();
     setState(() {
       _busquedaAplicada = texto;
       _filaSeleccionada = null;
+      _busquedaExacta = exacta;
     });
     if (texto.isEmpty) return;
     final productos = ref.read(productosStreamProvider).value ?? [];
-    final coincidencias = productos.where((p) => p.estado && coincideFuzzy(p.textoBusqueda, texto)).toList();
+    final coincidencias = productos.where((p) => p.estado && _coincide(p, texto)).toList();
     if (coincidencias.length == 1) {
       _confirmarSeleccion(coincidencias.first);
     }
+  }
+
+  bool _coincide(ProductoModel p, String texto) {
+    if (_busquedaExacta) return p.codigoBarras.trim() == texto || p.codigo.trim() == texto;
+    return coincideFuzzy(p.textoBusqueda, texto);
   }
 
   Future<void> _crearProductoNuevo() async {
@@ -140,7 +150,7 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
     final codigo = await escanearCodigoBarras(context);
     if (codigo == null || codigo.isEmpty || !mounted) return;
     _busquedaController.text = codigo;
-    _buscar();
+    _buscar(exacta: true);
   }
 
   @override
@@ -267,7 +277,7 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
                         );
                       }
 
-                      final lista = productos.where((p) => p.estado && coincideFuzzy(p.textoBusqueda, _busquedaAplicada)).toList();
+                      final lista = productos.where((p) => p.estado && _coincide(p, _busquedaAplicada)).toList();
                       _listaActual = lista;
                       if (lista.isEmpty) {
                         return Center(

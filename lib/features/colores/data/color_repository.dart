@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'color_model.dart';
+import 'color_import_service.dart';
 
 class ColorRepository {
   final _col = FirebaseFirestore.instance.collection('colores');
@@ -53,5 +54,39 @@ class ColorRepository {
 
   Future<void> eliminar(String id) async {
     await _col.doc(id).delete();
+  }
+
+  /// Crea en lote los registros de una importación desde Excel. No empareja
+  /// con registros existentes (el libro histórico no trae ningún id único
+  /// confiable): cada fila del archivo se agrega como un registro nuevo.
+  Future<int> importarColores(List<FilaImportacionColor> filas) async {
+    var creados = 0;
+    var batch = FirebaseFirestore.instance.batch();
+    var operacionesEnBatch = 0;
+
+    Future<void> descargarBatch() async {
+      if (operacionesEnBatch == 0) return;
+      await batch.commit();
+      batch = FirebaseFirestore.instance.batch();
+      operacionesEnBatch = 0;
+    }
+
+    for (final fila in filas) {
+      final ref = _col.doc();
+      batch.set(ref, {
+        'codigo': fila.codigo,
+        'cliente': fila.cliente,
+        'descripcion': fila.descripcion,
+        'ubicacionFisica': fila.ubicacionFisica,
+        'pagina': fila.pagina,
+        'fechaRegistro': fila.fechaRegistro != null ? Timestamp.fromDate(fila.fechaRegistro!) : null,
+        'observaciones': fila.observaciones,
+      });
+      creados++;
+      operacionesEnBatch++;
+      if (operacionesEnBatch >= 400) await descargarBatch();
+    }
+    await descargarBatch();
+    return creados;
   }
 }

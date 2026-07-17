@@ -18,6 +18,7 @@ import '../widgets/registrar_abono_compra_dialog.dart';
 import '../widgets/historial_abonos_compra_dialog.dart';
 import '../widgets/abono_general_dialog.dart';
 import '../widgets/resumen_abonos_dialog.dart';
+import '../widgets/importar_creditos_compra_dialog.dart';
 
 class ComprasCreditoScreen extends ConsumerStatefulWidget {
   const ComprasCreditoScreen({super.key});
@@ -49,6 +50,10 @@ class _ComprasCreditoScreenState extends ConsumerState<ComprasCreditoScreen> {
 
   void _abrirRegistrarCredito() {
     showDialog(context: context, builder: (context) => const RegistrarCreditoCompraDialog());
+  }
+
+  void _abrirImportar() {
+    showDialog(context: context, builder: (context) => const ImportarCreditosCompraDialog());
   }
 
   void _abrirResumenAbonos() {
@@ -227,6 +232,12 @@ class _ComprasCreditoScreenState extends ConsumerState<ComprasCreditoScreen> {
                         onPressed: () => ref.invalidate(comprasCreditoStreamProvider),
                         icon: const Icon(Icons.refresh, size: 18),
                         label: Text('Refrescar', style: GoogleFonts.poppins(fontSize: 13)),
+                        style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFB6BCC7)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _abrirImportar,
+                        icon: const Icon(Icons.upload_file_outlined, size: 18),
+                        label: Text('Importar', style: GoogleFonts.poppins(fontSize: 13)),
                         style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFB6BCC7)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                       ),
                       OutlinedButton.icon(

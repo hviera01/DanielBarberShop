@@ -37,6 +37,10 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
   String? _columnaOrden;
   bool _ordenAscendente = false;
   bool _precioConIsv = true;
+  // Cuando la búsqueda viene de escanear un código de barras se filtra por
+  // coincidencia exacta de código, no con el buscador difuso (que con
+  // códigos largos puede "acercarse" a varios productos distintos).
+  bool _busquedaPorCodigoBarras = false;
   List<ProductoModel> _listaActual = [];
 
   /// Precio de venta a mostrar según la vista elegida (con o sin ISV). El
@@ -51,6 +55,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
   }
 
   void _buscar() {
+    setState(() => _busquedaPorCodigoBarras = false);
     ref.read(inventarioBusquedaProvider.notifier).actualizar(_busquedaController.text.trim());
   }
 
@@ -58,13 +63,17 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     final codigo = await escanearCodigoBarras(context);
     if (codigo == null || codigo.isEmpty || !mounted) return;
     _busquedaController.text = codigo;
-    _buscar();
+    setState(() => _busquedaPorCodigoBarras = true);
+    ref.read(inventarioBusquedaProvider.notifier).actualizar(codigo.trim());
   }
 
   void _limpiarBusqueda() {
     _busquedaController.clear();
     ref.read(inventarioBusquedaProvider.notifier).actualizar('');
-    setState(() => _filaSeleccionada = null);
+    setState(() {
+      _filaSeleccionada = null;
+      _busquedaPorCodigoBarras = false;
+    });
   }
 
   Future<void> _abrirFormulario([ProductoModel? producto]) async {
@@ -325,7 +334,9 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                           lista = lista.where((p) => p.stock < 3).toList();
                         }
                         if (busqueda.isNotEmpty) {
-                          lista = lista.where((p) => coincideFuzzy(p.textoBusqueda, busqueda)).toList();
+                          lista = _busquedaPorCodigoBarras
+                              ? lista.where((p) => p.codigoBarras.trim() == busqueda || p.codigo.trim() == busqueda).toList()
+                              : lista.where((p) => coincideFuzzy(p.textoBusqueda, busqueda)).toList();
                         } else if (vista == 'filtrados') {
                           lista = [];
                         }

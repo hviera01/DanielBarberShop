@@ -8,6 +8,7 @@ import '../../providers/colores_provider.dart';
 import '../../../../core/utils/texto_utils.dart';
 import '../../../../core/utils/exportador.dart';
 import '../widgets/color_form_dialog.dart';
+import '../widgets/importar_colores_dialog.dart';
 
 class ColoresScreen extends ConsumerStatefulWidget {
   const ColoresScreen({super.key});
@@ -39,6 +40,10 @@ class _ColoresScreenState extends ConsumerState<ColoresScreen> {
 
   void _abrirFormulario([ColorModel? color]) {
     showDialog(context: context, builder: (context) => ColorFormDialog(color: color));
+  }
+
+  void _abrirImportar() {
+    showDialog(context: context, builder: (context) => const ImportarColoresDialog());
   }
 
   Future<void> _eliminar(ColorModel color) async {
@@ -128,6 +133,17 @@ class _ColoresScreenState extends ConsumerState<ColoresScreen> {
                         onPressed: () => ref.invalidate(coloresStreamProvider),
                         icon: const Icon(Icons.refresh, size: 18),
                         label: Text('Refrescar', style: GoogleFonts.poppins(fontSize: 13)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF1A1A1A),
+                          side: const BorderSide(color: Color(0xFFB6BCC7)),
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _abrirImportar,
+                        icon: const Icon(Icons.upload_file_outlined, size: 18),
+                        label: Text('Importar', style: GoogleFonts.poppins(fontSize: 13)),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: const Color(0xFF1A1A1A),
                           side: const BorderSide(color: Color(0xFFB6BCC7)),

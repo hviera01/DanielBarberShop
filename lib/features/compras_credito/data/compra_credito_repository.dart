@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'compra_credito_model.dart';
 import 'abono_compra_model.dart';
+import 'compra_credito_import_service.dart';
 
 class DistribucionAbono {
   final CompraCreditoModel compra;
@@ -10,9 +11,17 @@ class DistribucionAbono {
   DistribucionAbono({required this.compra, required this.montoAplicado, required this.saldoResultante});
 }
 
+class ResumenImportacionComprasCredito {
+  final int creados;
+  final int proveedoresCreados;
+
+  ResumenImportacionComprasCredito({required this.creados, required this.proveedoresCreados});
+}
+
 class CompraCreditoRepository {
   final _db = FirebaseFirestore.instance;
   final _col = FirebaseFirestore.instance.collection('comprasCredito');
+  final _colProveedores = FirebaseFirestore.instance.collection('proveedores');
 
   String _generarNumeroDocumento() {
     final ahora = DateTime.now().millisecondsSinceEpoch.toString();
@@ -88,6 +97,73 @@ class CompraCreditoRepository {
 
   Future<void> eliminar(String id) async {
     await _col.doc(id).delete();
+  }
+
+  /// Crea en lote los créditos de compra de una importación desde Excel.
+  /// Cada fila se agrega como un crédito manual nuevo (no empareja con
+  /// créditos existentes). Los proveedores que no existan todavía por nombre
+  /// se crean automáticamente, igual que las categorías al importar productos.
+  Future<ResumenImportacionComprasCredito> importarCreditos(List<FilaImportacionCompraCredito> filas) async {
+    final proveedoresSnap = await _colProveedores.get();
+    final idProveedorPorNombre = <String, String>{};
+    final rtnPorId = <String, String>{};
+    for (final d in proveedoresSnap.docs) {
+      final nombre = (d.data()['razonSocial'] as String? ?? '').trim().toLowerCase();
+      if (nombre.isNotEmpty) idProveedorPorNombre[nombre] = d.id;
+      rtnPorId[d.id] = (d.data()['rtn'] as String? ?? '');
+    }
+
+    var creados = 0, proveedoresCreados = 0;
+    var batch = _db.batch();
+    var operacionesEnBatch = 0;
+
+    Future<void> descargarBatch() async {
+      if (operacionesEnBatch == 0) return;
+      await batch.commit();
+      batch = _db.batch();
+      operacionesEnBatch = 0;
+    }
+
+    for (final fila in filas.where((f) => f.valido)) {
+      final nombreNorm = fila.nombreProveedor.trim().toLowerCase();
+      var idProveedor = idProveedorPorNombre[nombreNorm];
+      if (idProveedor == null) {
+        final ref = _colProveedores.doc();
+        batch.set(ref, {
+          'rtn': '',
+          'razonSocial': fila.nombreProveedor.trim(),
+          'correo': '',
+          'telefono': '',
+          'estado': true,
+          'fechaRegistro': FieldValue.serverTimestamp(),
+        });
+        idProveedor = ref.id;
+        idProveedorPorNombre[nombreNorm] = idProveedor;
+        rtnPorId[idProveedor] = '';
+        proveedoresCreados++;
+        operacionesEnBatch++;
+      }
+
+      final ref = _col.doc();
+      batch.set(ref, {
+        'idProveedor': idProveedor,
+        'documentoProveedor': rtnPorId[idProveedor]?.isNotEmpty == true ? rtnPorId[idProveedor] : 'N/A',
+        'nombreProveedor': fila.nombreProveedor,
+        'numeroDocumento': fila.numeroDocumento.isEmpty ? fila.numeroFila.toString() : fila.numeroDocumento,
+        'noFactura': fila.noFactura,
+        'montoTotal': fila.montoTotal,
+        'saldoPendiente': fila.saldoPendiente,
+        'fechaRegistro': fila.fechaRegistro != null ? Timestamp.fromDate(fila.fechaRegistro!) : FieldValue.serverTimestamp(),
+        'fechaVencimiento': Timestamp.fromDate(fila.fechaVencimiento),
+        'manual': true,
+      });
+      creados++;
+      operacionesEnBatch++;
+      if (operacionesEnBatch >= 400) await descargarBatch();
+    }
+    await descargarBatch();
+
+    return ResumenImportacionComprasCredito(creados: creados, proveedoresCreados: proveedoresCreados);
   }
 
   /// Calcula cómo se repartiría [monto] entre las facturas pendientes de un proveedor,

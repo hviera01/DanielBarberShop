@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'venta_credito_model.dart';
 import 'abono_model.dart';
+import 'venta_credito_import_service.dart';
 
 class VentaCreditoRepository {
   final _db = FirebaseFirestore.instance;
@@ -103,6 +104,40 @@ class VentaCreditoRepository {
 
   Future<void> eliminar(String id) async {
     await _col.doc(id).delete();
+  }
+
+  /// Crea en lote los créditos de venta de una importación desde Excel.
+  /// Cada fila se agrega como un crédito manual nuevo (no empareja con
+  /// créditos existentes).
+  Future<int> importarCreditos(List<FilaImportacionVentaCredito> filas) async {
+    var creados = 0;
+    var batch = _db.batch();
+    var operacionesEnBatch = 0;
+
+    Future<void> descargarBatch() async {
+      if (operacionesEnBatch == 0) return;
+      await batch.commit();
+      batch = _db.batch();
+      operacionesEnBatch = 0;
+    }
+
+    for (final fila in filas.where((f) => f.valido)) {
+      final ref = _col.doc();
+      batch.set(ref, {
+        'documentoCliente': fila.documentoCliente.isEmpty ? 'N/A' : fila.documentoCliente,
+        'nombreCliente': fila.nombreCliente,
+        'numeroDocumento': fila.numeroDocumento.isEmpty ? fila.numeroFila.toString() : fila.numeroDocumento,
+        'montoTotal': fila.montoTotal,
+        'saldoPendiente': fila.saldoPendiente,
+        'fechaRegistro': fila.fechaRegistro != null ? Timestamp.fromDate(fila.fechaRegistro!) : FieldValue.serverTimestamp(),
+        'fechaVencimiento': Timestamp.fromDate(fila.fechaVencimiento),
+      });
+      creados++;
+      operacionesEnBatch++;
+      if (operacionesEnBatch >= 400) await descargarBatch();
+    }
+    await descargarBatch();
+    return creados;
   }
 
   Future<List<AbonoModel>> obtenerAbonosPorRango(DateTime inicio, DateTime finInclusive) async {

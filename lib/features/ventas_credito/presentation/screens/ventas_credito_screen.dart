@@ -18,6 +18,7 @@ import '../widgets/registrar_credito_dialog.dart';
 import '../widgets/registrar_abono_dialog.dart';
 import '../widgets/unir_facturas_dialog.dart';
 import '../widgets/historial_abonos_dialog.dart';
+import '../widgets/importar_creditos_venta_dialog.dart';
 import '../../../ventas/presentation/screens/detalle_venta_screen.dart';
 
 class VentasCreditoScreen extends ConsumerStatefulWidget {
@@ -62,6 +63,10 @@ class _VentasCreditoScreenState extends ConsumerState<VentasCreditoScreen> {
 
   void _abrirRegistrarCredito() {
     showDialog(context: context, builder: (context) => const RegistrarCreditoDialog());
+  }
+
+  void _abrirImportar() {
+    showDialog(context: context, builder: (context) => const ImportarCreditosVentaDialog());
   }
 
   Future<void> _abrirRegistrarAbono(VentaCreditoModel credito) async {
@@ -252,6 +257,17 @@ class _VentasCreditoScreenState extends ConsumerState<VentasCreditoScreen> {
                         onPressed: () => ref.invalidate(ventasCreditoStreamProvider),
                         icon: const Icon(Icons.refresh, size: 18),
                         label: Text('Refrescar', style: GoogleFonts.poppins(fontSize: 13)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF1A1A1A),
+                          side: const BorderSide(color: Color(0xFFB6BCC7)),
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _abrirImportar,
+                        icon: const Icon(Icons.upload_file_outlined, size: 18),
+                        label: Text('Importar', style: GoogleFonts.poppins(fontSize: 13)),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: const Color(0xFF1A1A1A),
                           side: const BorderSide(color: Color(0xFFB6BCC7)),
