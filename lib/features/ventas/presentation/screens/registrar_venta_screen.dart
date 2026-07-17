@@ -10,6 +10,7 @@ import 'package:printing/printing.dart';
 import '../../data/venta_en_espera_model.dart';
 import '../../data/venta_export_service.dart';
 import '../../data/venta_model.dart';
+import '../../data/venta_repository.dart';
 import '../../data/venta_ticket_escpos_service.dart';
 import '../../providers/carrito_provider.dart';
 import '../../providers/ventas_provider.dart';
@@ -515,7 +516,18 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     var montoPago = 0.0;
     var montoCambio = 0.0;
     final esCotizacion = carrito.esCotizacion;
+    NegocioModel? negocio;
+    // Se captura el repositorio ahora (con `ref` todavía válido) en vez de
+    // llamar `ref.read(...)` de nuevo dentro del guardado en segundo plano:
+    // si el cajero cierra esta pestaña de Ventas mientras esa venta se
+    // sigue guardando sola, `ref` ya no se puede usar, pero el repositorio
+    // (que no depende de esta pantalla) sigue funcionando igual.
+    final ventaRepo = ref.read(ventaRepositoryProvider);
 
+    // Esta primera parte sí se espera: son cosas que necesitan una
+    // respuesta del cajero (el diálogo de cobro) o una validación previa
+    // (fecha límite), no la red. Mientras tanto el botón queda bloqueado
+    // para no disparar la venta dos veces.
     setState(() => _guardando = true);
     try {
       if (!esCotizacion) {
@@ -529,23 +541,71 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
           montoCambio = resultado.cambio;
         }
 
-        final negocio = await ref.read(negocioRepositoryProvider).obtenerNegocioActual();
+        negocio = await ref.read(negocioRepositoryProvider).obtenerNegocioActual();
         if (!mounted) return;
         if (carrito.tipoDocumento == 'Factura' || carrito.tipoDocumento == 'Boleta') {
-          final continuar = await _validarRangoYFecha(negocio, carrito.tipoDocumento);
+          final continuar = await _validarFechaLimite(negocio);
           if (!continuar) return;
         }
       }
+    } catch (e) {
+      _mostrarMensaje('Error: $e');
+      return;
+    } finally {
+      if (mounted) setState(() => _guardando = false);
+    }
 
-      final usuario = ref.read(authProvider).usuario?.nombreCompleto ?? '';
-      final categorias = ref.read(categoriasStreamProvider).value ?? [];
-      final categoriasSinControlStock = categorias.where((c) => !c.controlaStock).map((c) => c.id).toSet();
-      final venta = await ref.read(ventaRepositoryProvider).registrarVenta(
+    final usuario = ref.read(authProvider).usuario?.nombreCompleto ?? '';
+    final categorias = ref.read(categoriasStreamProvider).value ?? [];
+    final categoriasSinControlStock = categorias.where((c) => !c.controlaStock).map((c) => c.id).toSet();
+    final esFacturable = carrito.tipoDocumento == 'Factura' || carrito.tipoDocumento == 'Boleta';
+    final negocioFinal = negocio;
+    // Hay que capturar esto ANTES de _limpiarTodo(): ese método vacía el
+    // controlador de texto, así que leerlo después ya daría vacío.
+    final nombreCliente = _nombreClienteController.text.trim().isEmpty ? 'CONSUMIDOR FINAL' : _nombreClienteController.text.trim();
+
+    // A partir de acá la pantalla avanza al toque -se limpia el carrito y
+    // queda lista para la próxima venta- SIN esperar la confirmación real
+    // de Firestore: pediste que sea así aunque haya riesgo. El guardado de
+    // verdad sigue solo, en segundo plano. Si falla (sin internet, error
+    // del servidor, etc.) se avisa de inmediato y bien visible, porque en
+    // ese caso la venta NO quedó registrada — con opción de reintentar sin
+    // tener que cargar todo de nuevo.
+    _limpiarTodo();
+
+    unawaited(_guardarVentaEnSegundoPlano(
+      ventaRepo: ventaRepo,
+      carrito: carrito,
+      esCotizacion: esCotizacion,
+      esFacturable: esFacturable,
+      nombreCliente: nombreCliente,
+      montoPago: montoPago,
+      montoCambio: montoCambio,
+      usuario: usuario,
+      categoriasSinControlStock: categoriasSinControlStock,
+      negocio: negocioFinal,
+    ));
+  }
+
+  Future<void> _guardarVentaEnSegundoPlano({
+    required VentaRepository ventaRepo,
+    required CarritoVentaState carrito,
+    required bool esCotizacion,
+    required bool esFacturable,
+    required String nombreCliente,
+    required double montoPago,
+    required double montoCambio,
+    required String usuario,
+    required Set<String> categoriasSinControlStock,
+    required NegocioModel? negocio,
+  }) async {
+    try {
+      final venta = await ventaRepo.registrarVenta(
             tipoDocumento: carrito.tipoDocumento,
             condicion: esCotizacion ? 'Contado' : carrito.condicion,
             metodoPago: esCotizacion ? 'N/A' : (carrito.condicion == 'Credito' ? 'N/A' : carrito.metodoPago),
             documentoCliente: carrito.documentoCliente.trim().isEmpty ? 'N/A' : carrito.documentoCliente.trim(),
-            nombreCliente: _nombreClienteController.text.trim().isEmpty ? 'CONSUMIDOR FINAL' : _nombreClienteController.text.trim(),
+            nombreCliente: nombreCliente,
             fechaRegistro: carrito.fecha,
             fechaVencimiento: (!esCotizacion && carrito.condicion == 'Credito') ? carrito.fechaVencimiento : null,
             oc: carrito.oc,
@@ -563,31 +623,46 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
           );
 
       if (carrito.idEnEspera != null) {
-        await ref.read(ventaRepositoryProvider).eliminarVentaEnEspera(carrito.idEnEspera!);
+        unawaited(ventaRepo.eliminarVentaEnEspera(carrito.idEnEspera!));
       }
 
-      if (!mounted) return;
-
-      final esFacturable = carrito.tipoDocumento == 'Factura' || carrito.tipoDocumento == 'Boleta';
-      _limpiarTodo();
-
       if (esFacturable) {
-        // La venta ya quedó guardada en Firestore en este punto: lo que
-        // sigue es solo imprimir/mostrar el ticket, así que no se espera
-        // (no `await`) para soltar la pantalla — que se sienta instantánea
-        // es más importante que ver el resultado de la impresión al toque.
-        // Si algo de esto falla, igual se avisa con un SnackBar cuando
-        // termine, unos instantes después.
         unawaited(_imprimirEnSegundoPlano(venta));
+        if (negocio != null) _avisarSiRangoSuperado(negocio, venta);
       } else {
         _mostrarMensaje('${_tiposDocumento[venta.tipoDocumento]} generada: ${venta.numeroDocumento}');
       }
     } catch (e) {
-      _mostrarMensaje(e is TimeoutException
-          ? 'No se pudo guardar: se agotó el tiempo de espera. Revisá la conexión a internet e intentá de nuevo.'
-          : 'Error al registrar: $e');
-    } finally {
-      if (mounted) setState(() => _guardando = false);
+      if (!mounted) return;
+      final mensaje = e is TimeoutException
+          ? 'No se pudo guardar: se agotó el tiempo de espera. Revisá la conexión a internet.'
+          : 'No se pudo guardar: $e';
+      // Esta venta NO quedó registrada en la base de datos: aviso fuerte y
+      // persistente (no se cierra solo) con la opción de reintentar sin
+      // tener que volver a cargar todo.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('⚠ $mensaje', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+          backgroundColor: const Color(0xFFC62828),
+          duration: const Duration(seconds: 12),
+          action: SnackBarAction(
+            label: 'Reintentar',
+            textColor: Colors.white,
+            onPressed: () => _guardarVentaEnSegundoPlano(
+              ventaRepo: ventaRepo,
+              carrito: carrito,
+              esCotizacion: esCotizacion,
+              esFacturable: esFacturable,
+              nombreCliente: nombreCliente,
+              montoPago: montoPago,
+              montoCambio: montoCambio,
+              usuario: usuario,
+              categoriasSinControlStock: categoriasSinControlStock,
+              negocio: negocio,
+            ),
+          ),
+        ),
+      );
     }
   }
 
@@ -688,18 +763,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     }
   }
 
-  Future<bool> _validarRangoYFecha(NegocioModel negocio, String tipoDocumento) async {
-    final rangoHasta = int.tryParse(negocio.rangoHasta) ?? 0;
-    if (rangoHasta > 0) {
-      final proximo = await ref.read(ventaRepositoryProvider).obtenerProximoCorrelativo(tipoDocumento);
-      if (proximo > rangoHasta) {
-        final continuar = await _confirmarDialogo(
-          '¡Alerta!',
-          'Se ha alcanzado el rango autorizado para las facturas. ¿Desea continuar con la venta?',
-        );
-        if (!continuar) return false;
-      }
-    }
+  Future<bool> _validarFechaLimite(NegocioModel negocio) async {
     if (negocio.fechaLimiteEmision != null) {
       final hoy = DateTime.now();
       final limite = negocio.fechaLimiteEmision!;
@@ -714,6 +778,21 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       }
     }
     return true;
+  }
+
+  // Antes esto se preguntaba ANTES de guardar, con una lectura extra a
+  // Firestore (obtenerProximoCorrelativo) solo para saber si avisar — eso
+  // sumaba una vuelta de red completa a cada factura. Como de todas formas
+  // nunca bloqueaba la venta (con confirmar "Sí" igual se guardaba), avisar
+  // DESPUÉS de guardar, ya con el número real asignado, informa exactamente
+  // lo mismo sin ninguna lectura extra ni demora.
+  void _avisarSiRangoSuperado(NegocioModel negocio, VentaModel venta) {
+    final rangoHasta = int.tryParse(negocio.rangoHasta) ?? 0;
+    if (rangoHasta <= 0) return;
+    final numero = int.tryParse(venta.numeroDocumento) ?? 0;
+    if (numero > rangoHasta) {
+      _mostrarMensaje('Atención: se superó el rango autorizado para facturas (No. ${venta.numeroDocumento})');
+    }
   }
 
   // ---------- UI ----------

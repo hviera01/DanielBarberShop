@@ -31,13 +31,6 @@ class VentaRepository {
     return numero.toString().padLeft(8, '0');
   }
 
-  /// Solo para mostrar una vista previa del próximo número (no lo consume).
-  Future<int> obtenerProximoCorrelativo(String tipoDocumento) async {
-    final snap = await _colContadores.doc(_claveContador(tipoDocumento)).get();
-    final actual = ((snap.data()?['ultimo'] ?? 0) as num).toInt();
-    return actual + 1;
-  }
-
   Future<VentaModel> registrarVenta({
     required String tipoDocumento,
     required String condicion,
