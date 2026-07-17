@@ -11,6 +11,7 @@ import '../../../productos/data/producto_model.dart';
 import '../../../productos/providers/productos_provider.dart';
 import '../../../proveedores/data/proveedor_model.dart';
 import '../../../proveedores/providers/proveedores_provider.dart';
+import '../../../../core/providers/tabs_provider.dart';
 import '../../../../core/utils/formato_moneda.dart';
 import '../widgets/buscar_producto_compra_dialog.dart';
 import 'detalle_compra_screen.dart';
@@ -18,7 +19,12 @@ import 'detalle_compra_screen.dart';
 const _metodosPago = ['Efectivo', 'Transferencia', 'Tarjeta', 'Cheque'];
 
 class RegistrarCompraScreen extends ConsumerStatefulWidget {
-  const RegistrarCompraScreen({super.key});
+  // Id de la pestaña donde vive esta pantalla: los atajos de teclado
+  // (F10/F12) lo usan para saber si esta es la pestaña activa antes de
+  // responder (ver la misma explicación en RegistrarVentaScreen).
+  final String? tabId;
+
+  const RegistrarCompraScreen({super.key, this.tabId});
 
   @override
   ConsumerState<RegistrarCompraScreen> createState() => _RegistrarCompraScreenState();
@@ -54,6 +60,7 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
   bool _manejarAtajoTeclado(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
     if (!mounted || _guardando) return false;
+    if (!_esPestanaActiva()) return false;
     if (event.logicalKey == LogicalKeyboardKey.f10) {
       _agregarProductoDesdeBusqueda();
       return true;
@@ -63,6 +70,14 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
       return true;
     }
     return false;
+  }
+
+  bool _esPestanaActiva() {
+    final tabId = widget.tabId;
+    if (tabId == null) return true;
+    final tabsState = ref.read(tabsProvider);
+    if (tabsState.indiceActivo < 0 || tabsState.indiceActivo >= tabsState.tabs.length) return false;
+    return tabsState.tabs[tabsState.indiceActivo].id == tabId;
   }
 
   @override

@@ -20,7 +20,7 @@ class SideMenu extends ConsumerWidget {
         id: id,
         titulo: sub.titulo,
         icono: sub.icono,
-        contenido: construirPantalla(sub.moduleKey, sub.titulo, sub.icono),
+        contenido: construirPantalla(sub.moduleKey, sub.titulo, sub.icono, id),
       ),
     );
   }

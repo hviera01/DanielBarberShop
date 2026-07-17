@@ -23,16 +23,20 @@ import '../../features/compras/providers/carrito_compra_provider.dart';
 import '../../features/caja/presentation/screens/cierre_caja_screen.dart';
 import '../../features/egresos/presentation/screens/ingresos_egresos_screen.dart';
 
-Widget construirPantalla(String moduleKey, String titulo, IconData icono) {
+Widget construirPantalla(String moduleKey, String titulo, IconData icono, String tabId) {
   switch (moduleKey) {
     case 'ventas_registrar':
       // Cada pestaña de "Registrar Venta" necesita su propio carrito
       // independiente (el usuario puede tener varias ventas abiertas a la
       // vez); se logra dándole a esta subárbol su propia instancia del
-      // provider en vez de compartir la global.
+      // provider en vez de compartir la global. [tabId] es lo que le
+      // permite a la pantalla saber si es la pestaña que está activa ahora
+      // mismo, para que los atajos de teclado (F10/F12) solo respondan ahí
+      // y no en las demás pestañas de venta/compra que sigan abiertas de
+      // fondo.
       return ProviderScope(
         overrides: [carritoVentaProvider.overrideWith(() => CarritoVentaNotifier())],
-        child: const RegistrarVentaScreen(),
+        child: RegistrarVentaScreen(tabId: tabId),
       );
     case 'ventas_detalle':
       return const DetalleVentaScreen(esDialogo: false);
@@ -41,7 +45,7 @@ Widget construirPantalla(String moduleKey, String titulo, IconData icono) {
       // de "Registrar Compra" tiene su propio carrito independiente.
       return ProviderScope(
         overrides: [carritoCompraProvider.overrideWith(() => CarritoCompraNotifier())],
-        child: const RegistrarCompraScreen(),
+        child: RegistrarCompraScreen(tabId: tabId),
       );
     case 'compras_detalle':
       return const DetalleCompraScreen(esDialogo: false);

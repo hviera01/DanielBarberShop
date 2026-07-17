@@ -13,6 +13,7 @@ import '../../data/venta_model.dart';
 import '../../data/venta_repository.dart';
 import '../../data/venta_ticket_escpos_service.dart';
 import '../../providers/carrito_provider.dart';
+import '../../../../core/providers/tabs_provider.dart';
 import '../../providers/ventas_provider.dart';
 import '../../../auth/providers/auth_provider.dart';
 import '../../../negocio/providers/negocio_provider.dart';
@@ -41,7 +42,14 @@ const _tiposDocumento = {
 };
 
 class RegistrarVentaScreen extends ConsumerStatefulWidget {
-  const RegistrarVentaScreen({super.key});
+  // Id de la pestaña donde vive esta pantalla (ver pantalla_builder.dart):
+  // como se puede tener varias ventas abiertas en pestañas distintas al
+  // mismo tiempo, y todas quedan montadas de fondo (IndexedStack), esto es
+  // lo que le permite a los atajos de teclado (F10/F12) saber si esta es la
+  // pestaña activa antes de responder, para no disparar en todas a la vez.
+  final String? tabId;
+
+  const RegistrarVentaScreen({super.key, this.tabId});
 
   @override
   ConsumerState<RegistrarVentaScreen> createState() => _RegistrarVentaScreenState();
@@ -90,6 +98,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   bool _manejarAtajoTeclado(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
     if (!mounted || _guardando) return false;
+    if (!_esPestanaActiva()) return false;
     if (event.logicalKey == LogicalKeyboardKey.f10) {
       _agregarProductoDesdeBusqueda();
       return true;
@@ -99,6 +108,16 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       return true;
     }
     return false;
+  }
+
+  // Sin tabId (pantalla usada fuera del sistema de pestañas) siempre
+  // responde, como antes.
+  bool _esPestanaActiva() {
+    final tabId = widget.tabId;
+    if (tabId == null) return true;
+    final tabsState = ref.read(tabsProvider);
+    if (tabsState.indiceActivo < 0 || tabsState.indiceActivo >= tabsState.tabs.length) return false;
+    return tabsState.tabs[tabsState.indiceActivo].id == tabId;
   }
 
   @override
