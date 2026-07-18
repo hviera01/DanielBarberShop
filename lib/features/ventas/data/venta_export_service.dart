@@ -458,39 +458,41 @@ class VentaExportService {
   // Estima cuánto va a ocupar el ticket según lo que realmente se va a
   // imprimir (mismas condiciones que el `build` de arriba), para que el
   // rollo térmico no quede con un espacio en blanco larguísimo al final ni,
-  // al revés, tan corto que MultiPage tenga que agregar una página extra de
-  // continuación. Si la estimación se queda corta no se pierde nada:
-  // MultiPage sigue el contenido en una página siguiente automáticamente.
+  // al revés, tan corto que MultiPage tenga que partir el ticket en más de
+  // una página (en un rollo continuo eso es peor que un poco de papel de
+  // más: por larga que sea, la factura tiene que salir en una sola página).
+  // Por eso el número base ya incluye un margen de sobra generoso: es mejor
+  // que sobre un poco de papel en blanco al final a que se corte en dos.
   double _estimarAlturaTicketMm(VentaModel venta, NegocioModel negocio, {required bool tieneLogo}) {
-    const linea = 4.3;
-    const separador = 6.0;
     // Bloque fijo que siempre se imprime: tipo/fecha/atendido/condición,
-    // separadores, cliente + id, encabezado de tabla, los 7 renglones de
-    // totales, "son:", avisos legales de original/copia, agradecimiento y
-    // el "ORIGINAL"/"COPIA" final.
-    double alto = 30.0 + linea * 15 + separador * 5;
+    // cliente + id, encabezado de tabla, los 7 separadores entre secciones,
+    // los 7 renglones de totales, "son:", forma de pago, avisos legales de
+    // original/copia, agradecimiento y el "ORIGINAL"/"COPIA" final — más
+    // margen de la página y colchón de seguridad.
+    double alto = 195.0;
 
-    if (tieneLogo) alto += 18.0;
-    if (negocio.nombre.isNotEmpty) alto += linea;
-    if (negocio.eslogan.isNotEmpty) alto += linea;
-    if (negocio.direccion.isNotEmpty) alto += linea * 2;
-    if (negocio.rtn.isNotEmpty) alto += linea;
-    if (negocio.telefono.isNotEmpty) alto += linea;
-    if (negocio.correo.isNotEmpty) alto += linea;
-    if (negocio.cai.isNotEmpty) alto += linea;
+    if (tieneLogo) alto += 20.0;
+    if (negocio.nombre.isNotEmpty) alto += 6.0;
+    if (negocio.eslogan.isNotEmpty) alto += 6.0;
+    if (negocio.direccion.isNotEmpty) alto += 10.0;
+    if (negocio.rtn.isNotEmpty) alto += 6.0;
+    if (negocio.telefono.isNotEmpty) alto += 6.0;
+    if (negocio.correo.isNotEmpty) alto += 6.0;
+    if (negocio.cai.isNotEmpty) alto += 6.0;
 
-    if (venta.condicion == 'Credito' && venta.fechaVencimiento != null) alto += linea;
-    if (venta.oc.isNotEmpty) alto += linea;
-    if (venta.regExonerado.isNotEmpty) alto += linea;
-    if (venta.regSag.isNotEmpty) alto += linea;
-    if (venta.descuentoGlobal > 0) alto += linea;
-    if (venta.condicion != 'Credito') alto += linea * 2;
-    if (negocio.rangoPrefijo.isNotEmpty || negocio.rangoDesde.isNotEmpty) alto += linea;
-    if (negocio.fechaLimiteEmision != null) alto += linea;
+    if (venta.condicion == 'Credito' && venta.fechaVencimiento != null) alto += 6.0;
+    if (venta.oc.isNotEmpty) alto += 6.0;
+    if (venta.regExonerado.isNotEmpty) alto += 6.0;
+    if (venta.regSag.isNotEmpty) alto += 6.0;
+    if (venta.descuentoGlobal > 0) alto += 6.0;
+    // "Rango Aut.: 000-0001-01-00005401 al 000-0001-01-00006000" es largo y
+    // casi siempre se parte en dos líneas dentro de los 80mm.
+    if (negocio.rangoPrefijo.isNotEmpty || negocio.rangoDesde.isNotEmpty) alto += 10.0;
+    if (negocio.fechaLimiteEmision != null) alto += 6.0;
 
     // Cada producto: nombre + renglón de cantidad/importe, con margen extra
     // por si el nombre es largo y se parte en dos líneas.
-    alto += venta.detalle.length * (linea * 2 + 4);
+    alto += venta.detalle.length * 16.0;
 
     return alto;
   }
