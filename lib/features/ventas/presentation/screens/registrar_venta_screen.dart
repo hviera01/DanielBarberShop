@@ -700,11 +700,15 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
 
   // Decide cómo imprimir (o no) la venta recién registrada, según
   // negocio.modoImpresion y la plataforma:
-  // - 'preguntar' (default): igual que siempre, diálogo de vista previa.
+  // - En el APK de Android: sin importar el modo configurado (que está
+  //   pensado para escritorio, donde si hay "modo directo" es porque hay una
+  //   impresora fija conectada), se pregunta con un diálogo simple, porque en
+  //   el celular lo más probable es que no haya ninguna impresora a mano.
+  // - 'preguntar' (default, resto de plataformas): diálogo de vista previa.
   // - 'directo' en desktop: imprime sin diálogo en la impresora del SO
   //   configurada (paquete `printing`).
-  // - 'directo' en móvil: no hay forma de listar impresoras del SO, así que
-  //   se manda el ticket por ESC/POS a la impresora de red configurada.
+  // - 'directo' en iOS: se manda el ticket por ESC/POS a la impresora de red
+  //   configurada (no hay forma de listar impresoras del SO en móvil).
   // - 'directo' en web: no se puede imprimir sin diálogo desde el
   //   navegador, así que se abre su diálogo de impresión directo (sin
   //   nuestra propia vista previa intermedia).
@@ -712,6 +716,11 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   // no se bloquea nada: la venta ya quedó guardada. En móvil además se
   // marca `pendienteImpresion` para poder reimprimirla después.
   Future<void> _manejarImpresion(VentaModel venta, NegocioModel negocio) async {
+    if (!kIsWeb && Platform.isAndroid) {
+      await _manejarImpresionAndroid(venta, negocio);
+      return;
+    }
+
     if (negocio.modoImpresion != ModoImpresion.directo) {
       final impresora = negocio.impresoraTermicaUrl.isEmpty ? null : Printer(url: negocio.impresoraTermicaUrl, name: negocio.impresoraTermicaNombre);
       await Future<void>.delayed(const Duration(milliseconds: 150));
@@ -756,18 +765,8 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       return;
     }
 
-    if (Platform.isAndroid || Platform.isIOS) {
-      if (negocio.impresoraRedIp.isEmpty) {
-        _mostrarMensaje('No hay impresora configurada: la venta quedó pendiente de impresión');
-        await ref.read(ventaRepositoryProvider).marcarPendienteImpresion(venta.id, true);
-        return;
-      }
-      final bytes = await _servicioTicketEscPos.generarTicket(venta, negocio);
-      final ok = await _servicioImpresoraRed.imprimir(ip: negocio.impresoraRedIp, puerto: negocio.impresoraRedPuerto, bytes: bytes);
-      if (!ok) {
-        _mostrarMensaje('No se pudo imprimir: la venta quedó pendiente de impresión');
-        await ref.read(ventaRepositoryProvider).marcarPendienteImpresion(venta.id, true);
-      }
+    if (Platform.isIOS) {
+      await _imprimirEscPosRed(venta, negocio);
       return;
     }
 
@@ -781,6 +780,55 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       await Printing.directPrintPdf(printer: impresora, onLayout: (formato) => _servicioExport.generarPdfFactura(venta, negocio));
     } catch (_) {
       _mostrarMensaje('No se pudo imprimir en la impresora configurada');
+    }
+  }
+
+  // En el APK de Android casi nunca hay una impresora térmica a mano (a
+  // diferencia de escritorio, donde "modo directo" solo tiene sentido si hay
+  // una impresora fija conectada). En vez de intentar imprimir a ciegas por
+  // red y fallar en silencio, o abrir la vista previa completa del PDF, se
+  // pregunta rápido con un diálogo simple de dos botones.
+  Future<void> _manejarImpresionAndroid(VentaModel venta, NegocioModel negocio) async {
+    if (!mounted) return;
+    final opcion = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Venta ${venta.numeroDocumento} registrada', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 16)),
+        content: Text('¿Qué querés hacer con el ticket?', style: GoogleFonts.poppins(fontSize: 13)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'pendiente'),
+            child: Text('Dejar pendiente', style: GoogleFonts.poppins()),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFC62828)),
+            onPressed: () => Navigator.pop(context, 'imprimir'),
+            child: Text('Imprimir', style: GoogleFonts.poppins()),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (opcion == 'imprimir') {
+      await _imprimirEscPosRed(venta, negocio);
+    } else {
+      await ref.read(ventaRepositoryProvider).marcarPendienteImpresion(venta.id, true);
+    }
+  }
+
+  Future<void> _imprimirEscPosRed(VentaModel venta, NegocioModel negocio) async {
+    if (negocio.impresoraRedIp.isEmpty) {
+      _mostrarMensaje('No hay impresora configurada: la venta quedó pendiente de impresión');
+      await ref.read(ventaRepositoryProvider).marcarPendienteImpresion(venta.id, true);
+      return;
+    }
+    final bytes = await _servicioTicketEscPos.generarTicket(venta, negocio);
+    final ok = await _servicioImpresoraRed.imprimir(ip: negocio.impresoraRedIp, puerto: negocio.impresoraRedPuerto, bytes: bytes);
+    if (!ok) {
+      _mostrarMensaje('No se pudo imprimir: la venta quedó pendiente de impresión');
+      await ref.read(ventaRepositoryProvider).marcarPendienteImpresion(venta.id, true);
     }
   }
 
