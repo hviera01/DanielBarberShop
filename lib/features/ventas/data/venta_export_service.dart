@@ -1,5 +1,7 @@
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 import 'package:excel/excel.dart' as xls;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -330,17 +332,20 @@ class VentaExportService {
       return redondearMoneda(precio * (item.cantidad as double) * (1 - (item.descuentoPorcentaje as double) / 100));
     }
 
+    // En la web (imprime a través del diálogo del navegador) y en Android
+    // (ESC/POS por red, ni siquiera pasa por acá) 5mm de margen imprime
+    // perfecto. Pero en el .exe de Windows, imprimiendo nativo (con o sin
+    // vista previa), sigue saliendo recortado a lo ancho aun con esos 5mm:
+    // el controlador de la impresora en Windows debe estar interpretando un
+    // área imprimible más angosta que los 80mm declarados, y a diferencia
+    // del navegador, no reescala el contenido para que quepa — lo recorta
+    // tal cual. La solución robusta sin poder probar en la impresora real es
+    // darle más margen de sobra SOLO en Windows nativo, dejando la web y el
+    // APK exactamente como están (que ya imprimen bien).
+    final margenMm = (!kIsWeb && Platform.isWindows) ? 9.0 : 5.0;
+
     return pw.MultiPage(
-      // marginAll en mm (no en puntos, que es lo que había antes con el 10 a
-      // secas): 10 puntos son apenas ~3.5mm de margen a cada lado, dejando el
-      // contenido casi pegado al borde de los 80mm declarados. El propio
-      // paquete `pdf` recomienda 5mm para rollos térmicos (PdfPageFormat.roll80).
-      // Al imprimir con vista previa o desde el navegador el sistema suele
-      // reescalar un poco para que todo entre en el área imprimible real de
-      // la impresora, pero al imprimir directo (sin diálogo) se manda tal
-      // cual, así que ese margen angosto es la explicación más probable de
-      // que la factura saliera cortada por la derecha solo en "sin preguntar".
-      pageFormat: PdfPageFormat(80 * PdfPageFormat.mm, alturaMm * PdfPageFormat.mm, marginAll: 5 * PdfPageFormat.mm),
+      pageFormat: PdfPageFormat(80 * PdfPageFormat.mm, alturaMm * PdfPageFormat.mm, marginAll: margenMm * PdfPageFormat.mm),
       build: (context) {
         return [
             // Ancho fijo (en vez de alto) para que se vea grande y nítido sin
