@@ -5,10 +5,14 @@ import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../data/venta_model.dart';
 import '../../data/venta_export_service.dart';
+import '../../providers/carrito_provider.dart';
 import '../../providers/ventas_provider.dart';
 import '../../../auth/providers/auth_provider.dart';
 import '../../../negocio/providers/negocio_provider.dart';
+import '../../../../core/models/tab_item.dart';
+import '../../../../core/providers/tabs_provider.dart';
 import '../../../../core/utils/formato_moneda.dart';
+import '../../../../core/utils/pantalla_builder.dart';
 import '../../../../core/widgets/pdf_preview_dialog.dart';
 import '../../../ventas_credito/data/abono_model.dart';
 import '../../../ventas_credito/data/venta_credito_export_service.dart';
@@ -197,7 +201,7 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
         builder: (context) => PdfPreviewDialog(
           titulo: 'Documento formal · ${venta.numeroDocumento}',
           nombreArchivo: '${venta.tipoDocumento}_${venta.numeroDocumento}.pdf',
-          generarPdf: () => _servicioExport.generarPdfDetalleVenta(venta, negocio),
+          generarPdf: () => _servicioExport.generarPdfDetalleVenta(venta, negocio, preciosConIsv: _precioConIsv),
         ),
       );
     } catch (e) {
@@ -238,6 +242,25 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
         impresora: impresora,
       ),
     );
+  }
+
+  /// Abre una pestaña nueva de "Registrar Venta" con los mismos productos de
+  /// esta venta ya cargados en el carrito, lista para ajustar y confirmar
+  /// como una venta nueva (no toca ni modifica la original). [forzarFactura]
+  /// es lo que distingue "Duplicar venta" (una cotización sigue siendo
+  /// cotización) de "Convertir a venta" (pasa a Factura).
+  void _duplicarVenta(VentaModel venta, {bool forzarFactura = false}) {
+    ref.read(ventaParaCargarProvider.notifier).establecer(venta, forzarFactura: forzarFactura);
+    final id = 'ventas_registrar_${DateTime.now().millisecondsSinceEpoch}';
+    ref.read(tabsProvider.notifier).abrirTab(
+          TabItem(
+            id: id,
+            titulo: 'Registrar Venta',
+            icono: Icons.add_shopping_cart_outlined,
+            contenido: construirPantalla('ventas_registrar', 'Registrar Venta', Icons.add_shopping_cart_outlined, id),
+          ),
+        );
+    if (widget.esDialogo) Navigator.pop(context);
   }
 
   Future<void> _anular() async {
@@ -467,6 +490,19 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
                 label: Text('Registrar Abono', style: GoogleFonts.poppins(fontSize: 13)),
                 style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF16A34A), side: const BorderSide(color: Color(0xFFBEE9CE)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               ),
+            OutlinedButton.icon(
+              onPressed: () => _duplicarVenta(venta),
+              icon: const Icon(Icons.content_copy_outlined, size: 18),
+              label: Text('Duplicar venta', style: GoogleFonts.poppins(fontSize: 13)),
+              style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFB6BCC7)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            ),
+            if (esCotizacion && !venta.estaAnulada)
+              FilledButton.icon(
+                onPressed: () => _duplicarVenta(venta, forzarFactura: true),
+                icon: const Icon(Icons.point_of_sale_outlined, size: 18),
+                label: Text('Convertir a venta', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+                style: FilledButton.styleFrom(backgroundColor: const Color(0xFF16A34A), padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              ),
             if (!esCotizacion && !venta.estaAnulada)
               FilledButton.icon(
                 onPressed: _anulando ? null : _anular,
@@ -670,6 +706,13 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
     );
   }
 
+  // Misma base sin ISV que usan Subtotal/Gravado 15% en el PDF: precio de
+  // lista (sin descuento) de cada línea menos lo que quedó en subtotal.
+  double _descuentosYRebajas(VentaModel venta) {
+    final totalSinDescuento = venta.detalle.fold<double>(0, (s, item) => s + item.precioVenta * item.cantidad);
+    return redondearMoneda(totalSinDescuento - venta.subtotal);
+  }
+
   Widget _tarjetaTotales(VentaModel venta) {
     return _tarjeta(
       child: Column(
@@ -680,6 +723,7 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
             runSpacing: 10,
             children: [
               _filaTotalTexto('Subtotal', venta.subtotal),
+              if (_descuentosYRebajas(venta) > 0) _filaTotalTexto('Descuentos y rebajas', _descuentosYRebajas(venta)),
               _filaTotalTexto('ISV (15%)', venta.impuesto),
               if (venta.descuentoGlobal > 0) _filaTotalTextoPorcentaje('Descuento global', venta.descuentoGlobal),
               if (venta.condicion != 'Credito' && venta.metodoPago == 'Efectivo' && venta.montoPago > 0) ...[

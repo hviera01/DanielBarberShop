@@ -108,6 +108,22 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     // envolver el árbol en Focus/Shortcuts, que competiría con los
     // TextField de cantidad/precio/descripción ya presentes).
     HardwareKeyboard.instance.addHandler(_manejarAtajoTeclado);
+
+    // Si esta pestaña se abrió desde "Duplicar venta" o "Convertir a venta"
+    // en Detalle de Venta (ver DetalleVentaScreen), acá está esperando la
+    // venta de origen para precargar el carrito.
+    final datosOrigen = ref.read(ventaParaCargarProvider);
+    if (datosOrigen != null) {
+      ref.read(ventaParaCargarProvider.notifier).limpiar();
+      final ventaOrigen = datosOrigen.venta;
+      ref.read(carritoVentaProvider.notifier).cargarDesdeVenta(ventaOrigen, forzarFactura: datosOrigen.forzarFactura);
+      _nombreClienteController.text = ventaOrigen.nombreCliente;
+      _documentoClienteController.text = ventaOrigen.documentoCliente;
+      _ocController.text = ventaOrigen.oc;
+      _regExoneradoController.text = ventaOrigen.regExonerado;
+      _regSagController.text = ventaOrigen.regSag;
+      _descuentoGlobalController.text = ventaOrigen.descuentoGlobal == 0 ? '' : _formatoCantidad(ventaOrigen.descuentoGlobal);
+    }
   }
 
   bool _manejarAtajoTeclado(KeyEvent event) {

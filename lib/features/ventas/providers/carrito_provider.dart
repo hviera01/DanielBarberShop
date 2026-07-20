@@ -1,8 +1,34 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/item_venta_model.dart';
 import '../data/venta_en_espera_model.dart';
+import '../data/venta_model.dart';
 import '../../productos/data/producto_model.dart';
 import '../../../core/utils/formato_moneda.dart';
+
+/// [forzarFactura] distingue "Duplicar venta" (la cotización sigue siendo
+/// cotización) de "Convertir a venta" (la cotización pasa a Factura).
+class DatosVentaParaCargar {
+  final VentaModel venta;
+  final bool forzarFactura;
+
+  DatosVentaParaCargar({required this.venta, this.forzarFactura = false});
+}
+
+/// Guarda una venta "de paso" para que la próxima pestaña de Registrar Venta
+/// que se abra la cargue en su carrito (ver duplicar/convertir en
+/// DetalleVentaScreen). Es un provider global (no por pestaña, a diferencia
+/// de carritoVentaProvider) a propósito: se llena justo antes de abrir la
+/// pestaña nueva y esa pestaña lo consume (lo deja en null) apenas arranca,
+/// así que no hay riesgo de que se cuele en una pestaña futura sin querer.
+class VentaParaCargarNotifier extends Notifier<DatosVentaParaCargar?> {
+  @override
+  DatosVentaParaCargar? build() => null;
+
+  void establecer(VentaModel venta, {bool forzarFactura = false}) => state = DatosVentaParaCargar(venta: venta, forzarFactura: forzarFactura);
+  void limpiar() => state = null;
+}
+
+final ventaParaCargarProvider = NotifierProvider<VentaParaCargarNotifier, DatosVentaParaCargar?>(VentaParaCargarNotifier.new);
 
 double _subtotalLinea(double precioVenta, double cantidad, double descuentoPorcentaje) {
   return redondearMoneda(precioVenta * cantidad * (1 - descuentoPorcentaje / 100));
@@ -226,6 +252,44 @@ class CarritoVentaNotifier extends Notifier<CarritoVentaState> {
       regExonerado: sesion.regExonerado,
       regSag: sesion.regSag,
       descuentoGlobalPorcentaje: sesion.descuentoGlobal,
+    );
+  }
+
+  /// Carga en el carrito los productos y datos de una venta ya registrada
+  /// (para "Duplicar venta" o, si era una cotización, "Convertir a venta"
+  /// desde DetalleVentaScreen): arma una venta nueva desde cero con los
+  /// mismos productos, no continúa ni modifica la original. [forzarFactura]
+  /// solo aplica cuando la original es una cotización: "Duplicar" la deja
+  /// como cotización otra vez, "Convertir a venta" la pasa a Factura.
+  void cargarDesdeVenta(VentaModel venta, {bool forzarFactura = false}) {
+    state = CarritoVentaState(
+      // Sin reembasado: si algún item lo tenía marcado en la venta
+      // original, el descuento de stock del producto base ya se hizo en su
+      // momento. Esta es una venta nueva, así que si vuelve a faltar
+      // existencia, se pregunta por reembasado de nuevo en vez de asumir
+      // que ya está resuelto.
+      items: venta.detalle
+          .map((item) => ItemVentaModel(
+                idProducto: item.idProducto,
+                idCategoria: item.idCategoria,
+                nombreProducto: item.nombreProducto,
+                precioVenta: item.precioVenta,
+                cantidad: item.cantidad,
+                subtotal: item.subtotal,
+                precioCompraUsado: item.precioCompraUsado,
+                descuentoPorcentaje: item.descuentoPorcentaje,
+              ))
+          .toList(),
+      tipoDocumento: (forzarFactura && venta.tipoDocumento == 'Cotizacion') ? 'Factura' : venta.tipoDocumento,
+      condicion: venta.condicion,
+      metodoPago: venta.condicion == 'Credito' ? '' : (venta.metodoPago.isEmpty ? 'Efectivo' : venta.metodoPago),
+      documentoCliente: venta.documentoCliente,
+      nombreCliente: venta.nombreCliente,
+      fechaVencimiento: venta.condicion == 'Credito' ? DateTime.now().add(const Duration(days: 30)) : null,
+      oc: venta.oc,
+      regExonerado: venta.regExonerado,
+      regSag: venta.regSag,
+      descuentoGlobalPorcentaje: venta.descuentoGlobal,
     );
   }
 

@@ -5,6 +5,7 @@ import '../../data/producto_model.dart';
 import '../../providers/productos_provider.dart';
 import '../../../categorias/providers/categorias_provider.dart';
 import '../../../../core/widgets/barcode_scanner_screen.dart';
+import '../../../../core/widgets/reintentar_dialog.dart';
 
 class ProductoFormDialog extends ConsumerStatefulWidget {
   final ProductoModel? producto;
@@ -84,46 +85,62 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
       _guardando = true;
       _error = null;
     });
-    try {
-      final repo = ref.read(productoRepositoryProvider);
-      if (widget.producto == null) {
-        final creado = await repo.crear(
-          codigo: _codigoController.text,
-          codigoBarras: _codigoBarrasController.text,
-          nombre: nombre,
-          descripcion: _descripcionController.text,
-          idCategoria: _idCategoria!,
-          stock: _parseDouble(_stockController.text),
-          precioCompra: _parseDouble(_precioCompraController.text),
-          precioVenta: _parseDouble(_precioVentaController.text),
-          precioVenta2: _parseDouble(_precioVenta2Controller.text),
-          precioVenta3: _parseDouble(_precioVenta3Controller.text),
-          estado: _activo,
-        );
-        if (mounted) Navigator.pop(context, creado);
+    final repo = ref.read(productoRepositoryProvider);
+    if (widget.producto == null) {
+      final creado = await ejecutarConReintento(
+        context,
+        () => repo
+            .crear(
+              codigo: _codigoController.text,
+              codigoBarras: _codigoBarrasController.text,
+              nombre: nombre,
+              descripcion: _descripcionController.text,
+              idCategoria: _idCategoria!,
+              stock: _parseDouble(_stockController.text),
+              precioCompra: _parseDouble(_precioCompraController.text),
+              precioVenta: _parseDouble(_precioVentaController.text),
+              precioVenta2: _parseDouble(_precioVenta2Controller.text),
+              precioVenta3: _parseDouble(_precioVenta3Controller.text),
+              estado: _activo,
+            )
+            .timeout(const Duration(seconds: 12)),
+      );
+      if (!mounted) return;
+      if (creado == null) {
+        setState(() => _guardando = false);
         return;
-      } else {
-        await repo.actualizar(
-          id: widget.producto!.id,
-          codigo: _codigoController.text,
-          codigoBarras: _codigoBarrasController.text,
-          nombre: nombre,
-          descripcion: _descripcionController.text,
-          idCategoria: _idCategoria!,
-          precioCompra: _parseDouble(_precioCompraController.text),
-          precioVenta: _parseDouble(_precioVentaController.text),
-          precioVenta2: _parseDouble(_precioVenta2Controller.text),
-          precioVenta3: _parseDouble(_precioVenta3Controller.text),
-          estado: _activo,
-        );
       }
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
+      Navigator.pop(context, creado);
+      return;
     }
+
+    final ok = await ejecutarConReintento<bool>(
+      context,
+      () async {
+        await repo
+            .actualizar(
+              id: widget.producto!.id,
+              codigo: _codigoController.text,
+              codigoBarras: _codigoBarrasController.text,
+              nombre: nombre,
+              descripcion: _descripcionController.text,
+              idCategoria: _idCategoria!,
+              precioCompra: _parseDouble(_precioCompraController.text),
+              precioVenta: _parseDouble(_precioVentaController.text),
+              precioVenta2: _parseDouble(_precioVenta2Controller.text),
+              precioVenta3: _parseDouble(_precioVenta3Controller.text),
+              estado: _activo,
+            )
+            .timeout(const Duration(seconds: 12));
+        return true;
+      },
+    );
+    if (!mounted) return;
+    if (ok != true) {
+      setState(() => _guardando = false);
+      return;
+    }
+    Navigator.pop(context);
   }
 
   Future<void> _eliminar() async {
@@ -143,16 +160,17 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
         ],
       ),
     );
-    if (confirmar != true) return;
+    if (confirmar != true || !mounted) return;
     setState(() => _guardando = true);
-    try {
-      await ref.read(productoRepositoryProvider).eliminar(widget.producto!.id);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
+    final ok = await ejecutarConReintento<bool>(context, () async {
+      await ref.read(productoRepositoryProvider).eliminar(widget.producto!.id).timeout(const Duration(seconds: 12));
+      return true;
+    });
+    if (!mounted) return;
+    if (ok == true) {
+      Navigator.pop(context);
+    } else {
+      setState(() => _guardando = false);
     }
   }
 

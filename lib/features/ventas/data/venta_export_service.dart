@@ -19,8 +19,11 @@ class VentaExportService {
 
   /// PDF formal en tamaño carta, pensado para descargar/compartir/archivar
   /// (distinto al ticket térmico de 80mm que se usa para imprimir en punto
-  /// de venta).
-  Future<Uint8List> generarPdfDetalleVenta(VentaModel venta, NegocioModel negocio) async {
+  /// de venta). [preciosConIsv] es la elección del usuario en pantalla (ver
+  /// el selector en Detalle de Venta); si no se manda, cae al valor por
+  /// defecto del negocio, igual que hacía antes.
+  Future<Uint8List> generarPdfDetalleVenta(VentaModel venta, NegocioModel negocio, {bool? preciosConIsv}) async {
+    final conIsv = preciosConIsv ?? negocio.facturaPreciosConIsv;
     final doc = pw.Document();
     final logo = decodificarLogoPdf(negocio.logoColorBase64);
     final formatoDia = DateFormat('dd/MM/yyyy');
@@ -42,7 +45,7 @@ class VentaExportService {
               ],
               _infoFormal(venta, formatoDia),
               pw.SizedBox(height: 16),
-              _tablaItemsFormal(venta),
+              _tablaItemsFormal(venta, conIsv),
               pw.SizedBox(height: 14),
               pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -170,18 +173,25 @@ class VentaExportService {
     );
   }
 
-  pw.Widget _tablaItemsFormal(VentaModel venta) {
+  pw.Widget _tablaItemsFormal(VentaModel venta, bool conIsv) {
     final estiloEncabezado = pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.white);
     final estiloCelda = const pw.TextStyle(fontSize: 9);
+    double precioMostrado(dynamic item) => conIsv ? redondearMoneda((item.precioVenta as double) * 1.15) : item.precioVenta as double;
+    double importeMostrado(dynamic item) {
+      if (!conIsv) return item.subtotal as double;
+      final precio = precioMostrado(item);
+      return redondearMoneda(precio * (item.cantidad as double) * (1 - (item.descuentoPorcentaje as double) / 100));
+    }
+
     return pw.TableHelper.fromTextArray(
-      headers: ['Cant.', 'Descripción', 'P. Unitario', 'Desc. %', 'Importe'],
+      headers: ['Cant.', 'Descripción', conIsv ? 'P. Unitario (c/ISV)' : 'P. Unitario (s/ISV)', 'Desc. %', 'Importe'],
       data: venta.detalle.map((item) {
         return [
           _formatoCantidad(item.cantidad),
           item.nombreProducto,
-          formatearMoneda(item.precioVenta),
+          formatearMoneda(precioMostrado(item)),
           item.descuentoPorcentaje > 0 ? '${_formatoCantidad(item.descuentoPorcentaje)}%' : '-',
-          formatearMoneda(item.subtotal),
+          formatearMoneda(importeMostrado(item)),
         ];
       }).toList(),
       headerStyle: estiloEncabezado,
@@ -239,8 +249,14 @@ class VentaExportService {
   }
 
   pw.Widget _bloqueTotales(VentaModel venta) {
+    // Misma base sin ISV que ya usan Subtotal y Gravado 15%: precio de lista
+    // (sin descuento) de cada línea menos lo que realmente quedó en
+    // subtotal, así que cuadra con el resto del desglose.
+    final totalSinDescuento = venta.detalle.fold<double>(0, (s, item) => s + item.precioVenta * item.cantidad);
+    final descuentosYRebajas = redondearMoneda(totalSinDescuento - venta.subtotal);
+
     return pw.Container(
-      width: 190,
+      width: 210,
       padding: const pw.EdgeInsets.all(12),
       decoration: pw.BoxDecoration(color: _colorGrisClaro, borderRadius: pw.BorderRadius.circular(8)),
       child: pw.Column(
@@ -248,6 +264,11 @@ class VentaExportService {
         children: [
           _filaTotalFormal('Subtotal', formatearMoneda(venta.subtotal)),
           if (venta.descuentoGlobal > 0) _filaTotalFormal('Descuento global', '${_formatoCantidad(venta.descuentoGlobal)}%'),
+          _filaTotalFormal('Descuentos y rebajas', formatearMoneda(descuentosYRebajas)),
+          _filaTotalFormal('Importe exento', formatearMoneda(0)),
+          _filaTotalFormal('Importe exonerado', formatearMoneda(0)),
+          _filaTotalFormal('Gravado 15%', formatearMoneda(venta.subtotal)),
+          _filaTotalFormal('Gravado 18%', formatearMoneda(0)),
           _filaTotalFormal('ISV (15%)', formatearMoneda(venta.impuesto)),
           pw.Divider(color: _colorBorde, height: 10),
           _filaTotalFormal('TOTAL', formatearMoneda(venta.totalAPagar), destacado: true),
@@ -383,7 +404,7 @@ class VentaExportService {
             if (negocio.cai.isNotEmpty) pw.Center(child: pw.Text('CAI: ${negocio.cai}', style: const pw.TextStyle(fontSize: fSmall))),
             pw.SizedBox(height: 6),
             _separador(),
-            pw.Text('${venta.tipoDocumento.toUpperCase()} ${negocio.rangoPrefijo}${venta.numeroDocumento}', style: pw.TextStyle(fontSize: fNormal, fontWeight: pw.FontWeight.bold)),
+            pw.Text('${venta.tipoDocumento.toUpperCase()} ${negocio.rangoPrefijo}${venta.numeroDocumento}', style: const pw.TextStyle(fontSize: fNormal)),
             pw.Text('Fecha: ${venta.fechaRegistro != null ? formatoFecha.format(venta.fechaRegistro!) : '-'}', style: const pw.TextStyle(fontSize: fNormal)),
             pw.Text('Atendido por: ${venta.usuarioRegistro}', style: const pw.TextStyle(fontSize: fNormal)),
             pw.Text('Condición: ${venta.condicion}', style: const pw.TextStyle(fontSize: fNormal)),
@@ -402,8 +423,8 @@ class VentaExportService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text('CANT  DESCRIPCIÓN', style: pw.TextStyle(fontSize: fSmall, fontWeight: pw.FontWeight.bold)),
-                pw.Text('IMPORTE', style: pw.TextStyle(fontSize: fSmall, fontWeight: pw.FontWeight.bold)),
+                pw.Text('CANT  DESCRIPCIÓN', style: const pw.TextStyle(fontSize: fSmall)),
+                pw.Text('IMPORTE', style: const pw.TextStyle(fontSize: fSmall)),
               ],
             ),
             _separador(),
@@ -464,15 +485,15 @@ class VentaExportService {
               child: pw.Text(
                 'LA FACTURA ES BENEFICIO DE TODOS, ¡EXÍJALA!',
                 textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(fontSize: fSmall, fontWeight: pw.FontWeight.bold),
+                style: const pw.TextStyle(fontSize: fSmall),
               ),
             ),
             pw.SizedBox(height: 6),
-            pw.Text('¡GRACIAS POR SU COMPRA!', style: pw.TextStyle(fontSize: fNormal, fontWeight: pw.FontWeight.bold)),
+            pw.Text('¡GRACIAS POR SU COMPRA!', style: const pw.TextStyle(fontSize: fNormal)),
             pw.SizedBox(height: 10),
             pw.Align(
               alignment: pw.Alignment.centerRight,
-              child: pw.Text(esCopia ? 'COPIA' : 'ORIGINAL', style: pw.TextStyle(fontSize: fNormal, fontWeight: pw.FontWeight.bold)),
+              child: pw.Text(esCopia ? 'COPIA' : 'ORIGINAL', style: const pw.TextStyle(fontSize: fNormal)),
             ),
           ];
       },
