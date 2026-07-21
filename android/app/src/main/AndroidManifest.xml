@@ -3,7 +3,7 @@
          impresora térmica en la red WiFi local (ver ImpresoraRedService). -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="sistema_ventas"
+        android:label="Super Color"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity
