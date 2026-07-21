@@ -18,14 +18,20 @@ import 'venta_model.dart';
 class ImpresionEnVivoService {
   final _servicioExport = VentaExportService();
 
+  /// [forzarCopia] respeta la elección "Copia"/"Original" que se haya hecho
+  /// del lado del celular al pedir esta reimpresión en vivo (ver
+  /// VentaModel.solicitudImpresionEsCopia). null (default, una venta recién
+  /// confirmada) es distinto de false: null imprime ORIGINAL y además COPIA
+  /// si el negocio tiene esa opción activada; false fuerza una sola hoja
+  /// ORIGINAL sin importar esa configuración (ver generarPdfFactura).
   /// Devuelve true si logró imprimir.
-  Future<bool> imprimirSilencioso(VentaModel venta, NegocioModel negocio) async {
+  Future<bool> imprimirSilencioso(VentaModel venta, NegocioModel negocio, {bool? forzarCopia}) async {
     if (negocio.impresoraTermicaUrl.isEmpty) return false;
     try {
       final impresora = Printer(url: negocio.impresoraTermicaUrl, name: negocio.impresoraTermicaNombre);
       await Printing.directPrintPdf(
         printer: impresora,
-        onLayout: (formato) => _servicioExport.generarPdfFactura(venta, negocio, formatoImpresora: formato),
+        onLayout: (formato) => _servicioExport.generarPdfFactura(venta, negocio, forzarCopia: forzarCopia, formatoImpresora: formato),
       );
       return true;
     } catch (_) {

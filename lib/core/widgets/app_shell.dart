@@ -76,11 +76,17 @@ class _AppShellState extends ConsumerState<AppShell> {
     _idsSolicitudEnProceso.add(venta.id);
     try {
       final ventaRepo = ref.read(ventaRepositoryProvider);
-      unawaited(ventaRepo.marcarSolicitudImpresionEnVivo(venta.id, false));
-      final negocio = await ref.read(negocioRepositoryProvider).obtenerNegocioActual();
+      // Importante leer la venta completa ANTES de limpiar la solicitud: al
+      // ser un `update()` de Firestore, la limpieza se refleja de inmediato
+      // en el caché local (antes de confirmarse en el servidor), así que si
+      // se limpia primero, la lectura de acá abajo ya vendría con
+      // solicitudImpresionEsCopia en null -perdiendo la elección de
+      // copia/original que se pidió- en vez del valor real que se mandó.
       final ventaCompleta = await ventaRepo.obtenerVentaPorId(venta.id);
       if (ventaCompleta == null) return;
-      final ok = await _servicioImpresionEnVivo.imprimirSilencioso(ventaCompleta, negocio);
+      unawaited(ventaRepo.marcarSolicitudImpresionEnVivo(venta.id, false));
+      final negocio = await ref.read(negocioRepositoryProvider).obtenerNegocioActual();
+      final ok = await _servicioImpresionEnVivo.imprimirSilencioso(ventaCompleta, negocio, forzarCopia: ventaCompleta.solicitudImpresionEsCopia);
       if (ok) {
         await ventaRepo.marcarPendienteImpresion(venta.id, false);
       } else if (mounted) {

@@ -227,7 +227,7 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
       // hay impresora de red configurada o falla, se le pide a la PC
       // principal que la reimprima ella sola (ver PresenciaImpresionRepository).
       if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-        await _reimprimirEscPosORemoto(venta, negocio);
+        await _reimprimirEscPosORemoto(venta, negocio, esCopia);
         return;
       }
 
@@ -236,7 +236,7 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
       // esté usando desde el navegador.
       final esMovil = defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
       if (kIsWeb && esMovil) {
-        await _pedirImpresionEnVivo(venta, mensajeSinPc: 'No se puede reimprimir directo desde el navegador del celular');
+        await _pedirImpresionEnVivo(venta, esCopia, mensajeSinPc: 'No se puede reimprimir directo desde el navegador del celular');
         return;
       }
 
@@ -259,8 +259,10 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
   }
 
   // El ticket ESC/POS no distingue ORIGINAL/COPIA (esa elección solo existe
-  // en el PDF de escritorio): se manda el mismo ticket de siempre.
-  Future<void> _reimprimirEscPosORemoto(VentaModel venta, NegocioModel negocio) async {
+  // en el PDF de escritorio): se manda el mismo ticket de siempre. Si esto
+  // falla y se termina pidiendo la impresión en vivo a la PC, ahí sí se
+  // respeta la elección (la PC imprime el PDF, que sí la soporta).
+  Future<void> _reimprimirEscPosORemoto(VentaModel venta, NegocioModel negocio, bool esCopia) async {
     if (negocio.impresoraRedIp.isNotEmpty) {
       final bytes = await _servicioTicketEscPos.generarTicket(venta, negocio);
       final ok = await _servicioImpresoraRed.imprimir(ip: negocio.impresoraRedIp, puerto: negocio.impresoraRedPuerto, bytes: bytes);
@@ -269,15 +271,15 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
         return;
       }
     }
-    await _pedirImpresionEnVivo(venta);
+    await _pedirImpresionEnVivo(venta, esCopia);
   }
 
-  Future<void> _pedirImpresionEnVivo(VentaModel venta, {String mensajeSinPc = 'No se pudo reimprimir desde este dispositivo'}) async {
+  Future<void> _pedirImpresionEnVivo(VentaModel venta, bool esCopia, {String mensajeSinPc = 'No se pudo reimprimir desde este dispositivo'}) async {
     final pcConectada = await _presencia.estaConectada();
     if (!mounted) return;
     if (pcConectada) {
-      await ref.read(ventaRepositoryProvider).marcarSolicitudImpresionEnVivo(venta.id, true);
-      _mostrarMensaje('Se envió la orden de reimpresión a la caja principal');
+      await ref.read(ventaRepositoryProvider).marcarSolicitudImpresionEnVivo(venta.id, true, esCopia: esCopia);
+      _mostrarMensaje('Se envió la orden de reimpresión (${esCopia ? 'copia' : 'original'}) a la caja principal');
     } else {
       _mostrarMensaje(mensajeSinPc);
     }

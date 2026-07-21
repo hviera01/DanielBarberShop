@@ -267,10 +267,16 @@ class VentaRepository {
     }
   }
 
-  // Best-effort, mismo criterio que marcarPendienteImpresion.
-  Future<void> marcarSolicitudImpresionEnVivo(String id, bool valor) async {
+  // Best-effort, mismo criterio que marcarPendienteImpresion. [esCopia]
+  // viaja junto con la solicitud para que la PC sepa si esta reimpresión en
+  // particular debe salir como "copia" u "original" (ver
+  // DetalleVentaScreen._reimprimir y ImpresionEnVivoService). Se deja en
+  // null (default) para una venta recién confirmada, que no tiene una
+  // elección explícita de original/copia — ver VentaModel.
+  // solicitudImpresionEsCopia.
+  Future<void> marcarSolicitudImpresionEnVivo(String id, bool valor, {bool? esCopia}) async {
     try {
-      await _colVentas.doc(id).update({'solicitudImpresionEnVivo': valor});
+      await _colVentas.doc(id).update({'solicitudImpresionEnVivo': valor, 'solicitudImpresionEsCopia': esCopia});
     } on FirebaseException catch (e) {
       if (e.code != 'not-found' && e.code != 'invalid-argument') rethrow;
     }

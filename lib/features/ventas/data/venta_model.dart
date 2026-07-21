@@ -37,6 +37,15 @@ class VentaModel {
   // de esperar a que alguien la resuelva a mano desde Pendientes de
   // Impresión. Ver PresenciaImpresionRepository y el listener en AppShell.
   final bool solicitudImpresionEnVivo;
+  // Si la solicitud de impresión en vivo es para reimprimir como "copia"
+  // (true) u "original" (false): ver DetalleVentaScreen._reimprimir y
+  // ImpresionEnVivoService. null (default) significa que no es un
+  // reimprimir con elección explícita, sino una venta recién confirmada:
+  // ahí se imprime ORIGINAL y, además, COPIA si el negocio tiene esa
+  // opción activada (ver VentaExportService.generarPdfFactura) — muy
+  // distinto de "false", que fuerza una sola hoja ORIGINAL sin importar esa
+  // configuración.
+  final bool? solicitudImpresionEsCopia;
 
   bool get estaAnulada => estado == 'Anulada';
 
@@ -68,6 +77,7 @@ class VentaModel {
     this.fechaAnulacion,
     this.pendienteImpresion = false,
     this.solicitudImpresionEnVivo = false,
+    this.solicitudImpresionEsCopia,
   });
 
   factory VentaModel.fromMap(String id, Map<String, dynamic> data, List<ItemVentaModel> detalle) {
@@ -99,6 +109,7 @@ class VentaModel {
       fechaAnulacion: (data['fechaAnulacion'] as Timestamp?)?.toDate(),
       pendienteImpresion: data['pendienteImpresion'] ?? false,
       solicitudImpresionEnVivo: data['solicitudImpresionEnVivo'] ?? false,
+      solicitudImpresionEsCopia: data['solicitudImpresionEsCopia'] as bool?,
     );
   }
 }
