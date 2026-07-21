@@ -5,6 +5,7 @@ import 'package:printing/printing.dart';
 import '../../../core/services/impresora_red_service.dart';
 import '../../../core/widgets/pdf_preview_dialog.dart';
 import '../../negocio/data/negocio_model.dart';
+import 'presencia_impresion_repository.dart';
 import 'venta_export_service.dart';
 import 'venta_model.dart';
 import 'venta_repository.dart';
@@ -21,6 +22,7 @@ class ImpresionPendienteService {
   final _servicioExport = VentaExportService();
   final _servicioTicketEscPos = VentaTicketEscPosService();
   final _servicioImpresoraRed = ImpresoraRedService();
+  final _presencia = PresenciaImpresionRepository();
 
   Future<void> imprimir({
     required BuildContext context,
@@ -56,7 +58,10 @@ class ImpresionPendienteService {
     final esMovil = defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
 
     if (kIsWeb && esMovil) {
-      mostrarMensaje('No se puede imprimir directo desde el navegador del celular');
+      // No hay forma de imprimir directo desde el navegador del celular:
+      // antes de resignarse, se intenta pedirle a la PC principal que
+      // imprima ella sola (ver PresenciaImpresionRepository).
+      await _pedirImpresionEnVivoOMensaje(venta, ventaRepo, mostrarMensaje, mensajeSinPc: 'No se puede imprimir directo desde el navegador del celular');
       return;
     }
 
@@ -89,17 +94,36 @@ class ImpresionPendienteService {
     }
   }
 
+  // Intenta ESC/POS de red (Android/iOS). Si no hay impresora de red
+  // configurada, o falla el intento -lo más común en un celular-, antes de
+  // resignarse se prueba pedirle a la PC principal que imprima ella sola.
   Future<void> _imprimirEscPosRed(VentaModel venta, NegocioModel negocio, VentaRepository ventaRepo, void Function(String) mostrarMensaje) async {
-    if (negocio.impresoraRedIp.isEmpty) {
-      mostrarMensaje('No hay impresora de red configurada');
-      return;
+    if (negocio.impresoraRedIp.isNotEmpty) {
+      final bytes = await _servicioTicketEscPos.generarTicket(venta, negocio);
+      final ok = await _servicioImpresoraRed.imprimir(ip: negocio.impresoraRedIp, puerto: negocio.impresoraRedPuerto, bytes: bytes);
+      if (ok) {
+        await ventaRepo.marcarPendienteImpresion(venta.id, false);
+        return;
+      }
     }
-    final bytes = await _servicioTicketEscPos.generarTicket(venta, negocio);
-    final ok = await _servicioImpresoraRed.imprimir(ip: negocio.impresoraRedIp, puerto: negocio.impresoraRedPuerto, bytes: bytes);
-    if (ok) {
-      await ventaRepo.marcarPendienteImpresion(venta.id, false);
+    await _pedirImpresionEnVivoOMensaje(venta, ventaRepo, mostrarMensaje);
+  }
+
+  // La venta que llega acá ya está marcada pendienteImpresion (por algo
+  // apareció en la lista), así que no hace falta volver a marcarla: solo se
+  // agrega el pedido de impresión en vivo si hay PC conectada.
+  Future<void> _pedirImpresionEnVivoOMensaje(
+    VentaModel venta,
+    VentaRepository ventaRepo,
+    void Function(String) mostrarMensaje, {
+    String mensajeSinPc = 'No se pudo imprimir',
+  }) async {
+    final pcConectada = await _presencia.estaConectada();
+    if (pcConectada) {
+      await ventaRepo.marcarSolicitudImpresionEnVivo(venta.id, true);
+      mostrarMensaje('Se envió la orden de impresión a la caja principal');
     } else {
-      mostrarMensaje('No se pudo imprimir');
+      mostrarMensaje(mensajeSinPc);
     }
   }
 }

@@ -27,6 +27,7 @@ import '../../../categorias/providers/categorias_provider.dart';
 import '../../../../core/services/impresora_red_service.dart';
 import '../../../../core/utils/codigo_barras_utils.dart';
 import '../../../../core/utils/formato_moneda.dart';
+import '../../../../core/widgets/barcode_scanner_screen.dart';
 import '../../../../core/widgets/pdf_preview_dialog.dart';
 import '../widgets/buscar_producto_dialog.dart';
 import '../widgets/buscar_cliente_dialog.dart';
@@ -69,6 +70,15 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   final _servicioTicketEscPos = VentaTicketEscPosService();
   final _servicioImpresoraRed = ImpresoraRedService();
   bool _guardando = false;
+
+  // Campo de "escanear código de barras" directo en esta pantalla (sin
+  // pasar por el modal de Buscar Producto): con autofocus permanente en
+  // escritorio, para que un lector de código de barras físico (que se
+  // comporta como un teclado y escribe el código + Enter) lo agregue solo
+  // apenas se escanea algo, sin que el usuario tenga que tocar nada. En
+  // móvil el ícono de cámara abre BarcodeScannerScreen y hace lo mismo.
+  final _ctrlCodigoBarras = TextEditingController();
+  final _focusCodigoBarras = FocusNode();
 
   // Escaneo remoto por celular (ver EscanearRemotoDialog/EscaneoRemotoScreen):
   // la sesión y su escucha viven acá, en el estado de la pantalla, no dentro
@@ -157,6 +167,8 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     _suscripcionConectadoEscaneo?.cancel();
     final codigoEscaneo = _codigoEscaneoRemoto;
     if (codigoEscaneo != null) _escaneoRemoto.eliminarSesion(codigoEscaneo);
+    _ctrlCodigoBarras.dispose();
+    _focusCodigoBarras.dispose();
     _nombreClienteController.dispose();
     _documentoClienteController.dispose();
     _ocController.dispose();
@@ -268,6 +280,27 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     await _procesarProductoSeleccionado(resultado);
   }
 
+  // Confirma lo escrito/escaneado en el campo de código de barras de esta
+  // pantalla (ver _campoCodigoBarras): agrega el producto directo, sin abrir
+  // ningún modal. Se llama al presionar Enter (o el "submit" que manda un
+  // lector de código de barras físico, que se comporta como un teclado).
+  Future<void> _confirmarCodigoBarras() async {
+    final codigo = _ctrlCodigoBarras.text.trim();
+    _ctrlCodigoBarras.clear();
+    if (codigo.isEmpty) return;
+    await _procesarCodigoEscaneado(codigo);
+    // Vuelve a enfocar el campo para que el próximo escaneo (de un lector
+    // físico) se capture solo, sin que el usuario tenga que volver a
+    // clickear el campo cada vez.
+    if (mounted) _focusCodigoBarras.requestFocus();
+  }
+
+  Future<void> _escanearConCamara() async {
+    final codigo = await escanearCodigoBarras(context);
+    if (codigo == null || codigo.isEmpty || !mounted) return;
+    await _procesarCodigoEscaneado(codigo);
+  }
+
   // Compartido entre el buscador local (_agregarProductoDesdeBusqueda) y el
   // escáner remoto por celular (_procesarCodigoEscaneadoRemoto): decide si
   // hay que ofrecer reembasado por falta de existencia, o agregar directo.
@@ -319,11 +352,14 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     ref.read(carritoVentaProvider.notifier).agregarProductoDirecto(producto, precioSeleccionado: resultado.precio);
   }
 
-  /// Se llama cada vez que el celular (ver EscanearRemotoDialog) manda un
-  /// código escaneado: busca el producto por coincidencia exacta de código
-  /// (igual que el buscador local) y lo agrega con el mismo flujo de
-  /// siempre, incluyendo el aviso de reembasado si no hay existencia.
-  Future<void> _procesarCodigoEscaneadoRemoto(String codigo) async {
+  /// Busca un producto por código exacto (código de barras o código interno)
+  /// y lo agrega directo al carrito, con el mismo flujo de siempre (incluido
+  /// el aviso de reembasado si no hay existencia) — sin pasar por el modal
+  /// de Buscar Producto. Se llama tanto cuando el celular (ver
+  /// EscanearRemotoDialog) manda un código escaneado, como cuando se escanea
+  /// localmente en esta misma pantalla (campo de código de barras o cámara,
+  /// ver _campoCodigoBarras).
+  Future<void> _procesarCodigoEscaneado(String codigo) async {
     if (!mounted) return;
     final texto = codigo.trim();
     final productos = ref.read(productosStreamProvider).value ?? [];
@@ -375,7 +411,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
         if (cambio.type != DocumentChangeType.added) continue;
         final codigoEscaneado = cambio.doc.data()?['codigo'] as String?;
         if (codigoEscaneado != null && codigoEscaneado.isNotEmpty) {
-          _procesarCodigoEscaneadoRemoto(codigoEscaneado);
+          _procesarCodigoEscaneado(codigoEscaneado);
         }
       }
     });
@@ -1444,6 +1480,40 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     );
   }
 
+  // Campo de código de barras de esta pantalla (ver _confirmarCodigoBarras/
+  // _escanearConCamara): con foco permanente para que un lector físico
+  // (teclado-wedge) agregue el producto solo apenas escanea algo, y un
+  // ícono de cámara para escanear desde el celular (APK o navegador móvil).
+  Widget _campoCodigoBarras() {
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(color: const Color(0xFFE8EAF0), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        children: [
+          Icon(Icons.qr_code_scanner, size: 18, color: Colors.grey.shade600),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _ctrlCodigoBarras,
+              focusNode: _focusCodigoBarras,
+              autofocus: true,
+              style: GoogleFonts.poppins(fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Escanear o escribir código de barras...',
+                hintStyle: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade400),
+                border: InputBorder.none,
+                isDense: true,
+              ),
+              onSubmitted: (_) => _confirmarCodigoBarras(),
+            ),
+          ),
+          IconButton(tooltip: 'Escanear con la cámara', icon: const Icon(Icons.camera_alt_outlined, size: 20), onPressed: _escanearConCamara),
+        ],
+      ),
+    );
+  }
+
   Widget _tarjetaCarritoGrande(CarritoVentaState carrito, bool esMovil) {
     final productos = ref.watch(productosStreamProvider).value ?? [];
     final mapaProductos = {for (final p in productos) p.id: p};
@@ -1534,6 +1604,8 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                     ),
                   ],
                 ),
+          const SizedBox(height: 12),
+          _campoCodigoBarras(),
           const SizedBox(height: 12),
           Row(
             children: [

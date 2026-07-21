@@ -84,13 +84,14 @@ class _EscaneoRemotoScreenState extends State<EscaneoRemotoScreen> {
       _ultimoEnviado = valor;
       _mostrandoConfirmacion = true;
     });
-    // Mientras dure esta pausa se ignora cualquier otra detección (ver
-    // _alDetectar de arriba): le da tiempo al usuario a ver el aviso "✓
-    // Enviado" en pantalla y alejar el celular del código antes de que la
-    // cámara pueda volver a leerlo (o leer el siguiente) sin darse cuenta.
-    Future.delayed(const Duration(milliseconds: 900), () {
-      if (mounted) setState(() => _mostrandoConfirmacion = false);
-    });
+    // A diferencia de antes (que se cerraba sola después de una pausa), acá
+    // se queda esperando a que el usuario toque "OK" a propósito: así no
+    // hay forma de que la cámara vuelva a leer el mismo código (o el
+    // siguiente) sin que el usuario se dé cuenta y confirme cada uno.
+  }
+
+  void _confirmarEnviado() {
+    setState(() => _mostrandoConfirmacion = false);
   }
 
   @override
@@ -177,13 +178,17 @@ class _EscaneoRemotoScreenState extends State<EscaneoRemotoScreen> {
           // Aviso grande en el centro de la pantalla mientras dura la pausa
           // de confirmación (ver _alDetectar): junto con el beep, es lo que
           // evita que el usuario pase el mismo código dos veces sin notarlo.
+          // A diferencia de un simple mensaje que se cierra solo, acá hace
+          // falta tocar "OK" para seguir escaneando -así el usuario tiene
+          // que darse cuenta sí o sí de cada código que se manda.
           IgnorePointer(
+            ignoring: !_mostrandoConfirmacion,
             child: AnimatedOpacity(
               duration: const Duration(milliseconds: 150),
               opacity: _mostrandoConfirmacion ? 1 : 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 20),
                   decoration: BoxDecoration(color: const Color(0xFF2E7D32), borderRadius: BorderRadius.circular(18)),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -193,6 +198,15 @@ class _EscaneoRemotoScreenState extends State<EscaneoRemotoScreen> {
                       Text('Código enviado', style: GoogleFonts.poppins(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
                       if (_ultimoEnviado != null)
                         Text(_ultimoEnviado!, style: GoogleFonts.poppins(color: Colors.white.withValues(alpha: 0.9), fontSize: 12)),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: _confirmarEnviado,
+                          style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF2E7D32), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                          child: Text('OK, seguir escaneando', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 13)),
+                        ),
+                      ),
                     ],
                   ),
                 ),

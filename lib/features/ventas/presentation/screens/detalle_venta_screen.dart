@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -5,13 +7,17 @@ import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../data/venta_model.dart';
 import '../../data/venta_export_service.dart';
+import '../../data/venta_ticket_escpos_service.dart';
+import '../../data/presencia_impresion_repository.dart';
 import '../../data/tipos_documento.dart';
 import '../../providers/carrito_provider.dart';
 import '../../providers/ventas_provider.dart';
 import '../../../auth/providers/auth_provider.dart';
+import '../../../negocio/data/negocio_model.dart';
 import '../../../negocio/providers/negocio_provider.dart';
 import '../../../../core/models/tab_item.dart';
 import '../../../../core/providers/tabs_provider.dart';
+import '../../../../core/services/impresora_red_service.dart';
 import '../../../../core/utils/formato_moneda.dart';
 import '../../../../core/utils/pantalla_builder.dart';
 import '../../../../core/widgets/pdf_preview_dialog.dart';
@@ -45,6 +51,9 @@ class DetalleVentaScreen extends ConsumerStatefulWidget {
 class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
   final _busquedaController = TextEditingController();
   final _servicioExport = VentaExportService();
+  final _servicioTicketEscPos = VentaTicketEscPosService();
+  final _servicioImpresoraRed = ImpresoraRedService();
+  final _presencia = PresenciaImpresionRepository();
   VentaModel? _venta;
   bool _cargando = false;
   bool _anulando = false;
@@ -198,6 +207,11 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
     );
   }
 
+  void _mostrarMensaje(String mensaje) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje), showCloseIcon: true));
+  }
+
   Future<void> _reimprimir() async {
     final venta = _venta;
     if (venta == null) return;
@@ -207,6 +221,25 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
     try {
       final negocio = await ref.read(negocioRepositoryProvider).obtenerNegocioActual();
       if (!mounted) return;
+
+      // En Android/iOS no hay impresoras del SO para elegir (esto es
+      // exclusivo de escritorio): se intenta por ESC/POS de red, y si no
+      // hay impresora de red configurada o falla, se le pide a la PC
+      // principal que la reimprima ella sola (ver PresenciaImpresionRepository).
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        await _reimprimirEscPosORemoto(venta, negocio);
+        return;
+      }
+
+      // defaultTargetPlatform (a diferencia de Platform.isAndroid, que en
+      // web no sirve de nada) detecta el sistema operativo real aunque se
+      // esté usando desde el navegador.
+      final esMovil = defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
+      if (kIsWeb && esMovil) {
+        await _pedirImpresionEnVivo(venta, mensajeSinPc: 'No se puede reimprimir directo desde el navegador del celular');
+        return;
+      }
+
       final impresora = negocio.impresoraTermicaUrl.isEmpty ? null : Printer(url: negocio.impresoraTermicaUrl, name: negocio.impresoraTermicaNombre);
       await showDialog(
         context: context,
@@ -219,11 +252,34 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
         ),
       );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se pudo generar el ticket: $e'), showCloseIcon: true));
-      }
+      _mostrarMensaje('No se pudo generar el ticket: $e');
     } finally {
       if (mounted) setState(() => _procesandoPdf = false);
+    }
+  }
+
+  // El ticket ESC/POS no distingue ORIGINAL/COPIA (esa elección solo existe
+  // en el PDF de escritorio): se manda el mismo ticket de siempre.
+  Future<void> _reimprimirEscPosORemoto(VentaModel venta, NegocioModel negocio) async {
+    if (negocio.impresoraRedIp.isNotEmpty) {
+      final bytes = await _servicioTicketEscPos.generarTicket(venta, negocio);
+      final ok = await _servicioImpresoraRed.imprimir(ip: negocio.impresoraRedIp, puerto: negocio.impresoraRedPuerto, bytes: bytes);
+      if (ok) {
+        _mostrarMensaje('Ticket reimpreso');
+        return;
+      }
+    }
+    await _pedirImpresionEnVivo(venta);
+  }
+
+  Future<void> _pedirImpresionEnVivo(VentaModel venta, {String mensajeSinPc = 'No se pudo reimprimir desde este dispositivo'}) async {
+    final pcConectada = await _presencia.estaConectada();
+    if (!mounted) return;
+    if (pcConectada) {
+      await ref.read(ventaRepositoryProvider).marcarSolicitudImpresionEnVivo(venta.id, true);
+      _mostrarMensaje('Se envió la orden de reimpresión a la caja principal');
+    } else {
+      _mostrarMensaje(mensajeSinPc);
     }
   }
 
