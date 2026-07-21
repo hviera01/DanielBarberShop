@@ -72,6 +72,11 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   // las del diálogo — tenerlas montadas en los dos lados a la vez rompería
   // el foco y la edición.
   bool _tablaExpandida = false;
+  // Ver el comentario en _expandirTablaProductos: es la forma de pedirle a
+  // ese diálogo (si está abierto) que se vuelva a pintar con los datos ya
+  // leídos por el `ref` correcto de esta pantalla, cada vez que el carrito
+  // cambie mientras está abierto. null cuando el diálogo no está abierto.
+  void Function(void Function())? _refrescarDialogoExpandido;
 
   final _servicioExport = VentaExportService();
   final _servicioTicketEscPos = VentaTicketEscPosService();
@@ -1269,6 +1274,11 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   @override
   Widget build(BuildContext context) {
     final carrito = ref.watch(carritoVentaProvider);
+    // Si el diálogo de "ver la tabla más grande" está abierto, le pide que
+    // se vuelva a pintar con los datos ya leídos por este `ref` (el
+    // correcto para esta pestaña) cada vez que el carrito cambia — ver
+    // _expandirTablaProductos para el porqué no puede leerlo por su cuenta.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refrescarDialogoExpandido?.call(() {}));
 
     return Container(
       color: const Color(0xFFF2F3F7),
@@ -1886,11 +1896,19 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   }
 
   // Muestra la tabla de productos sola, casi a pantalla completa, para
-  // cuando hay varios items y la vista normal se queda chica. El contenido
-  // de la tabla va dentro de un Consumer propio (no alcanza con el `ref` de
-  // esta pantalla) para que se siga actualizando en vivo mientras el
-  // diálogo está abierto: si se edita una cantidad o se borra una línea acá
-  // adentro, tiene que verse al toque, no recién al cerrar.
+  // cuando hay varios items y la vista normal se queda chica.
+  //
+  // Cada pestaña de Registrar Venta tiene su propio carrito aislado (ver
+  // pantalla_builder.dart: ProviderScope con carritoVentaProvider
+  // sobreescrito por pestaña), pero showDialog inserta el diálogo por
+  // fuera de ese aislamiento (usa el Navigator raíz, por encima de todas
+  // las pestañas): un `ref.watch` armado DENTRO del diálogo (por ejemplo
+  // con un Consumer propio) terminaría leyendo el carrito por defecto de
+  // afuera, vacío, en vez del de esta pestaña -por eso el diálogo decía
+  // "Todavía no agregaste productos" aunque sí había-. La solución es leer
+  // siempre con el `ref` de esta pantalla (que sí está adentro del
+  // ProviderScope correcto) y solo usar el StatefulBuilder del diálogo
+  // para volver a pintar con esos datos ya leídos correctamente.
   void _expandirTablaProductos() {
     setState(() => _tablaExpandida = true);
     showDialog(
@@ -1905,53 +1923,51 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
             height: tamano.height - 40,
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
-            // El toggle Con/Sin ISV cambia _precioCarritoConIsv en esta
-            // pantalla (con su propio setState), pero eso no alcanza para
-            // refrescar lo que ya se dibujó acá adentro (el diálogo es una
-            // ruta aparte): con este StatefulBuilder, tocarlo también
-            // reconstruye el encabezado y el selector del diálogo al toque.
             child: StatefulBuilder(
-              builder: (context, setDialogState) => Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text('Productos en la venta', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w700)),
-                      const SizedBox(width: 14),
-                      _selectorPrecioIsvCarrito(compacto: true, alCambiarExtra: () => setDialogState(() {})),
-                      const Spacer(),
-                      IconButton(tooltip: 'Cerrar', icon: const Icon(Icons.close), onPressed: () => Navigator.pop(dialogContext)),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  _encabezadoTablaCarrito(),
-                  Divider(height: 18, color: Colors.grey.shade300),
-                  Expanded(
-                    child: Consumer(
-                      builder: (context, ref, _) {
-                        final carrito = ref.watch(carritoVentaProvider);
-                        final productos = ref.watch(productosStreamProvider).value ?? [];
-                        final mapaProductos = {for (final p in productos) p.id: p};
-                        if (carrito.items.isEmpty) {
-                          return Center(
-                            child: Text('Todavía no agregaste productos.', style: GoogleFonts.poppins(color: Colors.grey.shade500)),
-                          );
-                        }
-                        return ListView.separated(
-                          itemCount: carrito.items.length,
-                          separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
-                          itemBuilder: (context, i) => _filaCarritoTabla(i, carrito.items[i], mapaProductos),
-                        );
-                      },
+              builder: (context, setDialogState) {
+                // Se guarda para que el build() de esta pantalla (que sí
+                // escucha carritoVentaProvider con el ref correcto) pueda
+                // pedirle a este diálogo que se vuelva a pintar cada vez
+                // que el carrito cambie mientras está abierto.
+                _refrescarDialogoExpandido = setDialogState;
+                final carrito = ref.read(carritoVentaProvider);
+                final productos = ref.read(productosStreamProvider).value ?? [];
+                final mapaProductos = {for (final p in productos) p.id: p};
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text('Productos en la venta', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w700)),
+                        const SizedBox(width: 14),
+                        _selectorPrecioIsvCarrito(compacto: true, alCambiarExtra: () => setDialogState(() {})),
+                        const Spacer(),
+                        IconButton(tooltip: 'Cerrar', icon: const Icon(Icons.close), onPressed: () => Navigator.pop(dialogContext)),
+                      ],
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(height: 14),
+                    _encabezadoTablaCarrito(),
+                    Divider(height: 18, color: Colors.grey.shade300),
+                    Expanded(
+                      child: carrito.items.isEmpty
+                          ? Center(
+                              child: Text('Todavía no agregaste productos.', style: GoogleFonts.poppins(color: Colors.grey.shade500)),
+                            )
+                          : ListView.separated(
+                              itemCount: carrito.items.length,
+                              separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
+                              itemBuilder: (context, i) => _filaCarritoTabla(i, carrito.items[i], mapaProductos),
+                            ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         );
       },
     ).then((_) {
+      _refrescarDialogoExpandido = null;
       if (mounted) setState(() => _tablaExpandida = false);
     });
   }
