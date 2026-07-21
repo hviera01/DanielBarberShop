@@ -1526,43 +1526,20 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     );
   }
 
-  // Campo de código de barras de esta pantalla (ver _confirmarCodigoBarras/
-  // _escanearConCamara). Solo se ve en el celular (APK o navegador móvil):
-  // ahí tiene sentido un campo para escribir/pegar el código y un ícono de
-  // cámara. En escritorio (Windows o navegador de escritorio) no se
-  // muestra -el escaneo visible ahí es "Escanear con celular" (QR)-, pero
-  // el llamador (ver _tarjetaCarritoGrande) lo deja igual en el árbol
-  // dentro de un Offstage: layout y foco siguen funcionando aunque no se
-  // pinte nada, así que un lector de código de barras físico (que se
-  // comporta como un teclado) sigue agregando el producto en cualquier
-  // momento sin necesitar un campo visible.
+  // Campo de código de barras de esta pantalla (ver _confirmarCodigoBarras),
+  // siempre invisible (el llamador, ver _tarjetaCarritoGrande, lo envuelve
+  // en un Offstage): en escritorio, layout y foco siguen funcionando
+  // aunque no se pinte nada, así que un lector de código de barras físico
+  // (que se comporta como un teclado) agrega el producto en cualquier
+  // momento sin necesitar un campo visible. En el celular no hace falta
+  // (ahí se escanea con la cámara, ver _escanearConCamara y el botón
+  // "Escanear" junto a "Agregar Producto").
   Widget _campoCodigoBarras() {
-    final campo = TextField(
+    return TextField(
       controller: _ctrlCodigoBarras,
       focusNode: _focusCodigoBarras,
       autofocus: true,
-      style: GoogleFonts.poppins(fontSize: 13),
-      decoration: InputDecoration(
-        hintText: 'Escanear o escribir código de barras...',
-        hintStyle: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade400),
-        border: InputBorder.none,
-        isDense: true,
-      ),
       onSubmitted: (_) => _confirmarCodigoBarras(),
-    );
-
-    return Container(
-      height: 46,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(color: const Color(0xFFE8EAF0), borderRadius: BorderRadius.circular(12)),
-      child: Row(
-        children: [
-          Icon(Icons.qr_code_scanner, size: 18, color: Colors.grey.shade600),
-          const SizedBox(width: 8),
-          Expanded(child: campo),
-          IconButton(tooltip: 'Escanear con la cámara', icon: const Icon(Icons.camera_alt_outlined, size: 20), onPressed: _escanearConCamara),
-        ],
-      ),
     );
   }
 
@@ -1618,14 +1595,31 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                   children: [
                     Text('Productos en la venta', style: GoogleFonts.poppins(fontSize: 14.5, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: _agregarProductoDesdeBusqueda,
-                        icon: const Icon(Icons.add, size: 18),
-                        label: Text('Agregar Producto', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
-                        style: FilledButton.styleFrom(backgroundColor: const Color(0xFFC62828), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: _agregarProductoDesdeBusqueda,
+                            icon: const Icon(Icons.add, size: 18),
+                            label: Text('Agregar Producto', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+                            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFC62828), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                          ),
+                        ),
+                        if (_esPlataformaMovil) ...[
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: _escanearConCamara,
+                            icon: const Icon(Icons.qr_code_scanner, size: 16),
+                            label: Text('Escanear', style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF1A1A1A),
+                              side: const BorderSide(color: Color(0xFFB6BCC7)),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 )
@@ -1656,11 +1650,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                     ),
                   ],
                 ),
-          if (_esPlataformaMovil) ...[
-            const SizedBox(height: 12),
-            _campoCodigoBarras(),
-          ] else
-            Offstage(offstage: true, child: _campoCodigoBarras()),
+          Offstage(offstage: true, child: _campoCodigoBarras()),
           const SizedBox(height: 12),
           Row(
             children: [
