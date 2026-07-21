@@ -362,6 +362,16 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   Future<void> _procesarCodigoEscaneado(String codigo) async {
     if (!mounted) return;
     final texto = codigo.trim();
+    // Por si el stream de productos todavía no trajo el primer valor (poco
+    // común, pero puede pasar con internet lento): espera a que haya datos
+    // antes de buscar, para no buscar contra una lista vacía y fallar en
+    // silencio (el código quedaría como "no encontrado" sin serlo).
+    if (ref.read(productosStreamProvider).value == null) {
+      try {
+        await ref.read(productosStreamProvider.future);
+      } catch (_) {}
+      if (!mounted) return;
+    }
     final productos = ref.read(productosStreamProvider).value ?? [];
     bool coincide(ProductoModel p, String t) => p.estado && (p.codigoBarras.trim() == t || p.codigo.trim() == t);
     var coincidencias = productos.where((p) => coincide(p, texto)).toList();

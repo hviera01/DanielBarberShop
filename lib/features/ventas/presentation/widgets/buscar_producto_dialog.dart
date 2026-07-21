@@ -160,6 +160,16 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
     final codigo = await escanearCodigoBarras(context);
     if (codigo == null || codigo.isEmpty || !mounted) return;
     _busquedaController.text = codigo;
+    // Por si el stream de productos todavía no trajo el primer valor (poco
+    // común, pero puede pasar si se escanea apenas se abre la pantalla con
+    // internet lento): espera a que haya datos antes de buscar, para no
+    // buscar contra una lista vacía y fallar en silencio.
+    if (ref.read(productosStreamProvider).value == null) {
+      try {
+        await ref.read(productosStreamProvider.future);
+      } catch (_) {}
+      if (!mounted) return;
+    }
     _buscar(exacta: true);
   }
 
