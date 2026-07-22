@@ -1987,12 +1987,14 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                               itemBuilder: (context, i) => _filaCarritoTabla(i, carrito.items[i], mapaProductos),
                             ),
                     ),
-                    const SizedBox(height: 14),
-                    // Misma tarjeta de totales y mismo botón de crear venta
-                    // que la pantalla normal: confirmar la venta desde acá
-                    // funciona exactamente igual (valida, cobra si hace
-                    // falta, guarda, y limpia el carrito al terminar).
-                    _tarjetaTotales(carrito, false),
+                    const SizedBox(height: 10),
+                    // Chico y discreto a propósito: el objetivo de este
+                    // diálogo es ver la tabla grande, no repetir la tarjeta
+                    // de totales completa (esa ya está en la pantalla
+                    // normal). Confirmar la venta desde acá funciona igual
+                    // que siempre (valida, cobra si hace falta, guarda, y
+                    // limpia el carrito al terminar).
+                    _barraTotalesCompacta(carrito),
                   ],
                 );
               },
@@ -2004,6 +2006,51 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       _refrescarDialogoExpandido = null;
       if (mounted) setState(() => _tablaExpandida = false);
     });
+  }
+
+  // Versión chica de los totales + botón de crear venta, solo para la tabla
+  // expandida (ver _expandirTablaProductos): una sola fila delgada, para
+  // que la tabla se quede con casi todo el espacio, que es para lo que se
+  // abrió este diálogo.
+  Widget _barraTotalesCompacta(CarritoVentaState carrito) {
+    Widget total(String etiqueta, double valor, {bool destacado = false}) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(etiqueta.toUpperCase(), style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.grey.shade500, letterSpacing: 0.3)),
+          Text(
+            formatearMoneda(valor),
+            style: GoogleFonts.poppins(fontSize: destacado ? 15 : 12.5, fontWeight: FontWeight.w800, color: destacado ? const Color(0xFFC62828) : const Color(0xFF1A1A1A)),
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(color: const Color(0xFFF2F3F7), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        children: [
+          total('Subtotal', carrito.subtotal),
+          const SizedBox(width: 20),
+          total('ISV', carrito.impuesto),
+          const SizedBox(width: 20),
+          total('Total a pagar', carrito.totalAPagar, destacado: true),
+          const Spacer(),
+          SizedBox(
+            height: 38,
+            child: FilledButton(
+              onPressed: _guardando ? null : _confirmarVenta,
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF1A1A1A), padding: const EdgeInsets.symmetric(horizontal: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+              child: _guardando
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Text(_textoBoton, style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.white)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _encabezadoTablaCarrito() {
