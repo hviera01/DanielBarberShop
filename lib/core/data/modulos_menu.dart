@@ -118,6 +118,7 @@ List<ModuloMenu> obtenerModulos() {
         SubModulo(titulo: 'Reporte Financiero', icono: Icons.account_balance_outlined, moduleKey: 'reporte_financiero', soloAdmin: true),
         SubModulo(titulo: 'Cierre de Caja', icono: Icons.point_of_sale_outlined, moduleKey: 'cierre_caja'),
         SubModulo(titulo: 'Ingresos-Egresos', icono: Icons.swap_vert_outlined, moduleKey: 'ingresos_egresos'),
+        SubModulo(titulo: 'Comisiones', icono: Icons.paid_outlined, moduleKey: 'reporte_comisiones', soloAdmin: true),
       ],
     ),
   ];

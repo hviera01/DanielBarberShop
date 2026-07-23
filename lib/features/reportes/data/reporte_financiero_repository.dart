@@ -241,6 +241,13 @@ class ReporteFinancieroRepository {
 
     final ventasPorUsuario = _agruparPorUsuario(ventasValidas);
 
+    final resumenServiciosProductos = ResumenServiciosProductos(
+      ventasServicios: itemsVenta.where((i) => i.esServicio).fold<double>(0, (s, i) => s + i.subtotal),
+      costoServicios: itemsVenta.where((i) => i.esServicio).fold<double>(0, (s, i) => s + i.precioCompraUsado * i.cantidad),
+      ventasProductos: itemsVenta.where((i) => !i.esServicio).fold<double>(0, (s, i) => s + i.subtotal),
+      costoProductos: itemsVenta.where((i) => !i.esServicio).fold<double>(0, (s, i) => s + i.precioCompraUsado * i.cantidad),
+    );
+
     final totalAbonosComprasCredito = abonosCompra.fold<double>(0, (s, a) => s + a.montoAbonado);
     final abonosPorProveedor = _agruparAbonosPorProveedor(abonosCompra);
 
@@ -284,6 +291,7 @@ class ReporteFinancieroRepository {
       topGananciaPorProducto: topGananciaPorProducto,
       productosSinVenta: productosSinVenta,
       ventasPorUsuario: ventasPorUsuario,
+      resumenServiciosProductos: resumenServiciosProductos,
       totalAbonosComprasCredito: totalAbonosComprasCredito,
       abonosPorProveedor: abonosPorProveedor,
       recomendacionPago: recomendacionPago,

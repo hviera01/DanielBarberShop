@@ -10,6 +10,7 @@ import '../../features/clientes/presentation/screens/clientes_screen.dart';
 import '../../features/proveedores/presentation/screens/proveedores_screen.dart';
 import '../../features/barberos/presentation/screens/barberos_screen.dart';
 import '../../features/citas/presentation/screens/agenda_screen.dart';
+import '../../features/comisiones/presentation/screens/reporte_comisiones_screen.dart';
 import '../../features/ventas_credito/presentation/screens/ventas_credito_screen.dart';
 import '../../features/compras_credito/presentation/screens/compras_credito_screen.dart';
 import '../../features/reportes/presentation/screens/reporte_ventas_screen.dart';
@@ -71,6 +72,8 @@ Widget construirPantalla(String moduleKey, String titulo, IconData icono, String
       return const BarberosScreen();
     case 'agenda':
       return const AgendaScreen();
+    case 'reporte_comisiones':
+      return const ReporteComisionesScreen();
     case 'ventas_credito':
       return const VentasCreditoScreen();
     case 'compras_credito':

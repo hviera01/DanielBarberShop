@@ -20,6 +20,27 @@ class ProductoSinVenta {
   ProductoSinVenta({required this.idProducto, required this.nombreProducto, required this.stock, required this.valorInventario});
 }
 
+/// Cuánto del negocio del periodo vino de servicios (cortes) vs. productos
+/// físicos: separado porque son dos negocios con márgenes muy distintos (un
+/// servicio normalmente no tiene costo de mercadería, o uno muy chico de
+/// insumos) y mezclarlos en un solo margen bruto no dice mucho.
+class ResumenServiciosProductos {
+  final double ventasServicios;
+  final double costoServicios;
+  final double ventasProductos;
+  final double costoProductos;
+
+  ResumenServiciosProductos({
+    required this.ventasServicios,
+    required this.costoServicios,
+    required this.ventasProductos,
+    required this.costoProductos,
+  });
+
+  double get utilidadServicios => ventasServicios - costoServicios;
+  double get utilidadProductos => ventasProductos - costoProductos;
+}
+
 class VentasPorUsuario {
   final String usuario;
   final double totalVentas;
@@ -144,6 +165,7 @@ class ReporteFinancieroData {
 
   final List<GananciaPorVenta> gananciaPorVenta;
   final List<VentasPorUsuario> ventasPorUsuario;
+  final ResumenServiciosProductos resumenServiciosProductos;
 
   final double totalAbonosComprasCredito;
   final List<AbonoPorProveedor> abonosPorProveedor;
@@ -168,6 +190,7 @@ class ReporteFinancieroData {
     required this.topGananciaPorProducto,
     required this.productosSinVenta,
     required this.ventasPorUsuario,
+    required this.resumenServiciosProductos,
     required this.totalAbonosComprasCredito,
     required this.abonosPorProveedor,
     required this.recomendacionPago,
