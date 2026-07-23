@@ -92,6 +92,14 @@ List<ModuloMenu> obtenerModulos() {
       ],
     ),
     ModuloMenu(
+      titulo: 'Citas',
+      icono: Icons.event_outlined,
+      color: const Color(0xFF14B8A6),
+      subModulos: [
+        SubModulo(titulo: 'Agenda de Citas', icono: Icons.event_outlined, moduleKey: 'agenda'),
+      ],
+    ),
+    ModuloMenu(
       titulo: 'Créditos',
       icono: Icons.credit_card_outlined,
       color: const Color(0xFFEC4899),

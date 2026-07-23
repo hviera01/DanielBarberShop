@@ -33,6 +33,20 @@ class ClienteRepository {
     });
   }
 
+  /// Registro exprés (por ejemplo, al agendar una cita con un cliente que
+  /// todavía no existe en el catálogo): solo nombre y teléfono.
+  Future<ClienteModel> crearRapido({required String nombreCompleto, String telefono = ''}) async {
+    final ref = await _col.add({
+      'dni': '',
+      'nombreCompleto': nombreCompleto,
+      'correo': '',
+      'telefono': telefono,
+      'estado': true,
+      'fechaRegistro': FieldValue.serverTimestamp(),
+    });
+    return ClienteModel(id: ref.id, dni: '', nombreCompleto: nombreCompleto, correo: '', telefono: telefono, estado: true);
+  }
+
   Future<void> actualizar({
     required String id,
     required String dni,
