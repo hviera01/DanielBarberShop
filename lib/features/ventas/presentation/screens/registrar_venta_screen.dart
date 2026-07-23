@@ -24,6 +24,9 @@ import '../../../negocio/presentation/widgets/acceso_especial.dart';
 import '../../../productos/data/producto_model.dart';
 import '../../../productos/providers/productos_provider.dart';
 import '../../../categorias/providers/categorias_provider.dart';
+import '../../../barberos/providers/barberos_provider.dart';
+import '../../../barberos/data/barbero_model.dart';
+import '../../../usuarios/providers/usuarios_provider.dart';
 import '../../../../core/services/impresora_red_service.dart';
 import '../../../../core/utils/codigo_barras_utils.dart';
 import '../../../../core/utils/formato_moneda.dart';
@@ -63,6 +66,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   final _regExoneradoController = TextEditingController();
   final _regSagController = TextEditingController();
   final _descuentoGlobalController = TextEditingController();
+  final _porcentajeTarjetaController = TextEditingController();
   bool _datosExpandidos = false;
   bool _precioCarritoConIsv = true;
   // true mientras está abierto el diálogo de "ver la tabla más grande" (ver
@@ -312,6 +316,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     _regExoneradoController.dispose();
     _regSagController.dispose();
     _descuentoGlobalController.dispose();
+    _porcentajeTarjetaController.dispose();
     for (final c in _ctrlCantidad.values) {
       c.dispose();
     }
@@ -842,6 +847,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     _regExoneradoController.clear();
     _regSagController.clear();
     _descuentoGlobalController.clear();
+    _porcentajeTarjetaController.clear();
     for (final c in _ctrlCantidad.values) {
       c.dispose();
     }
@@ -899,6 +905,15 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     final carrito = ref.read(carritoVentaProvider);
     if (carrito.items.isEmpty) {
       _mostrarMensaje('Debe ingresar productos en la venta');
+      return;
+    }
+    final servicioSinBarbero = carrito.items.any((i) => i.esServicio && i.idBarbero.isEmpty);
+    if (servicioSinBarbero) {
+      _mostrarMensaje('Hay un servicio sin barbero asignado');
+      return;
+    }
+    if (carrito.metodoPago == 'Tarjeta' && carrito.porcentajeTarjeta <= 0) {
+      _mostrarMensaje('Indicá el % de comisión de la tarjeta');
       return;
     }
 
@@ -1009,6 +1024,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
             totalAPagar: carrito.totalAPagar,
             usuario: usuario,
             categoriasSinControlStock: categoriasSinControlStock,
+            porcentajeTarjeta: carrito.porcentajeTarjeta,
           );
 
       if (carrito.idEnEspera != null) {
@@ -1524,6 +1540,25 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                     onChanged: (v) {
                       if (v == null) return;
                       ref.read(carritoVentaProvider.notifier).establecerMetodoPago(v);
+                    },
+                  ),
+                ),
+              // Comisión bancaria: el cliente sigue pagando el total completo
+              // (no cambia totalAPagar), esto solo se guarda como metadata
+              // para que Caja/Reportes puedan calcular el neto real que
+              // ingresó por este pago.
+              if (!carrito.esCotizacion && carrito.condicion != 'Credito' && carrito.metodoPago == 'Tarjeta')
+                SizedBox(
+                  width: esMovil ? double.infinity : 160,
+                  child: TextField(
+                    controller: _porcentajeTarjetaController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                    style: GoogleFonts.poppins(fontSize: 13),
+                    decoration: _decoracion('% comisión tarjeta'),
+                    onChanged: (v) {
+                      final valor = double.tryParse(v.replaceAll(',', '.')) ?? 0;
+                      ref.read(carritoVentaProvider.notifier).establecerPorcentajeTarjeta(valor);
                     },
                   ),
                 ),
@@ -2239,8 +2274,131 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
           onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
         ),
         if (item.reembasado as bool) Text('Reembasado', style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.grey.shade400)),
+        if (item.esServicio as bool) _chipBarberoServicio(index, item) else _chipVendidoPor(index, item),
       ],
     );
+  }
+
+  Widget _chipBarberoServicio(int index, dynamic item) {
+    final idBarbero = item.idBarbero as String;
+    final nombreBarbero = item.nombreBarbero as String;
+    final sinAsignar = idBarbero.isEmpty;
+    return InkWell(
+      onTap: () => _seleccionarBarbero(index),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(top: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: sinAsignar ? Colors.red.shade50 : const Color(0xFFE8EAF0),
+          borderRadius: BorderRadius.circular(8),
+          border: sinAsignar ? Border.all(color: Colors.red.shade200) : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.content_cut_outlined, size: 12, color: sinAsignar ? Colors.red.shade400 : Colors.grey.shade600),
+            const SizedBox(width: 4),
+            Text(
+              sinAsignar ? 'Elegí el barbero' : nombreBarbero,
+              style: GoogleFonts.poppins(fontSize: 10.5, fontWeight: FontWeight.w600, color: sinAsignar ? Colors.red.shade400 : Colors.grey.shade700),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chipVendidoPor(int index, dynamic item) {
+    final tipo = item.vendidoPorTipo as String;
+    final nombre = item.vendidoPorNombre as String;
+    return InkWell(
+      onTap: () => _seleccionarVendidoPor(index),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(top: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(color: const Color(0xFFE8EAF0), borderRadius: BorderRadius.circular(8)),
+        child: Text(
+          tipo == 'N/A' ? 'Vendido por: N/A' : 'Vendido por: $nombre',
+          style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.grey.shade700),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _seleccionarBarbero(int index) async {
+    final barberos = await ref.read(barberosActivosProvider.future);
+    if (!mounted) return;
+    final elegido = await showDialog<BarberoModel>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text('¿Quién atendió?', style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
+        children: barberos.isEmpty
+            ? [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text('No hay barberos activos registrados', style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade600)),
+                ),
+              ]
+            : barberos
+                .map((b) => SimpleDialogOption(
+                      onPressed: () => Navigator.pop(context, b),
+                      child: Text('${b.nombreCompleto} (${b.porcentajeComision.toStringAsFixed(0)}%)', style: GoogleFonts.poppins(fontSize: 13.5)),
+                    ))
+                .toList(),
+      ),
+    );
+    if (elegido == null || !mounted) return;
+    ref.read(carritoVentaProvider.notifier).establecerBarberoLinea(
+          index,
+          idBarbero: elegido.id,
+          nombreBarbero: elegido.nombreCompleto,
+          pctComision: elegido.porcentajeComision,
+        );
+  }
+
+  Future<void> _seleccionarVendidoPor(int index) async {
+    final barberos = await ref.read(barberosActivosProvider.future);
+    final usuarios = (ref.read(usuariosStreamProvider).value ?? []).where((u) => u.estado).toList();
+    if (!mounted) return;
+    final resultado = await showDialog<(String, String, String)>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text('¿Quién vendió este producto?', style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, ('N/A', '', '')),
+            child: Text('N/A', style: GoogleFonts.poppins(fontSize: 13.5)),
+          ),
+          if (usuarios.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+              child: Text('Usuarios', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.w700)),
+            ),
+          ...usuarios.map((u) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, ('Usuario', u.id, u.nombreCompleto)),
+                child: Text(u.nombreCompleto, style: GoogleFonts.poppins(fontSize: 13.5)),
+              )),
+          if (barberos.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+              child: Text('Barberos', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.w700)),
+            ),
+          ...barberos.map((b) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, ('Barbero', b.id, b.nombreCompleto)),
+                child: Text(b.nombreCompleto, style: GoogleFonts.poppins(fontSize: 13.5)),
+              )),
+        ],
+      ),
+    );
+    if (resultado == null || !mounted) return;
+    ref.read(carritoVentaProvider.notifier).establecerVendidoPorLinea(
+          index,
+          tipo: resultado.$1,
+          id: resultado.$2,
+          nombre: resultado.$3,
+        );
   }
 
   Widget _filaCarritoTabla(int index, dynamic item, Map<String, ProductoModel> mapaProductos) {

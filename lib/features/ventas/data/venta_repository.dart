@@ -74,11 +74,17 @@ class VentaRepository {
     // antes de cada venta, y el registro de venta tiene que sentirse casi
     // instantáneo.
     Set<String> categoriasSinControlStock = const {},
+    // % de comisión bancaria si metodoPago == 'Tarjeta' (ver
+    // carrito_provider): solo metadata, no afecta totalAPagar.
+    double porcentajeTarjeta = 0,
   }) async {
     final claveContador = _claveContador(tipoDocumento);
     final contadorRef = _colContadores.doc(claveContador);
     final ventaRef = _colVentas.doc();
-    final itemsADescontar = items.where((i) => !i.reembasado && !categoriasSinControlStock.contains(i.idCategoria)).toList();
+    // Los servicios (esServicio) nunca controlan stock, sin importar su
+    // categoría: a diferencia del sistema viejo, que lo inferia de una
+    // categoría mágica, acá es un campo explícito del producto.
+    final itemsADescontar = items.where((i) => !i.reembasado && !i.esServicio && !categoriasSinControlStock.contains(i.idCategoria)).toList();
 
     late String numeroDocumento;
     late Map<ItemVentaModel, double> costosFifo;
@@ -165,6 +171,7 @@ class VentaRepository {
         'regSag': regSag,
         'descuentoGlobal': descuentoGlobal,
         'pendienteImpresion': false,
+        'porcentajeTarjeta': metodoPago == 'Tarjeta' ? porcentajeTarjeta : 0,
       });
 
       for (final item in items) {
@@ -260,6 +267,7 @@ class VentaRepository {
         final costoReal = costosFifo[item];
         return costoReal != null ? item.copyWith(precioCompraUsado: costoReal) : item;
       }).toList(),
+      porcentajeTarjeta: metodoPago == 'Tarjeta' ? porcentajeTarjeta : 0,
     );
   }
 

@@ -46,6 +46,10 @@ class VentaModel {
   // distinto de "false", que fuerza una sola hoja ORIGINAL sin importar esa
   // configuración.
   final bool? solicitudImpresionEsCopia;
+  // % de comisión bancaria si metodoPago == 'Tarjeta' (ver carrito_provider):
+  // el cliente paga/ve totalAPagar completo, esto es solo metadata para que
+  // los reportes de caja puedan calcular el neto que de verdad ingresó.
+  final double porcentajeTarjeta;
 
   bool get estaAnulada => estado == 'Anulada';
 
@@ -84,6 +88,7 @@ class VentaModel {
       pendienteImpresion: pendienteImpresion,
       solicitudImpresionEnVivo: solicitudImpresionEnVivo,
       solicitudImpresionEsCopia: solicitudImpresionEsCopia,
+      porcentajeTarjeta: porcentajeTarjeta,
     );
   }
 
@@ -116,6 +121,7 @@ class VentaModel {
     this.pendienteImpresion = false,
     this.solicitudImpresionEnVivo = false,
     this.solicitudImpresionEsCopia,
+    this.porcentajeTarjeta = 0,
   });
 
   factory VentaModel.fromMap(String id, Map<String, dynamic> data, List<ItemVentaModel> detalle) {
@@ -148,6 +154,7 @@ class VentaModel {
       pendienteImpresion: data['pendienteImpresion'] ?? false,
       solicitudImpresionEnVivo: data['solicitudImpresionEnVivo'] ?? false,
       solicitudImpresionEsCopia: data['solicitudImpresionEsCopia'] as bool?,
+      porcentajeTarjeta: (data['porcentajeTarjeta'] ?? 0).toDouble(),
     );
   }
 }

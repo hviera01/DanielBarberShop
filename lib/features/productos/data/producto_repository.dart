@@ -41,6 +41,7 @@ class ProductoRepository {
     required double precioVenta2,
     required double precioVenta3,
     required bool estado,
+    bool esServicio = false,
   }) async {
     var codigoFinal = codigo.trim();
     if (codigoFinal.isEmpty) {
@@ -63,6 +64,7 @@ class ProductoRepository {
       'precioVenta2': precioVenta2,
       'precioVenta3': precioVenta3,
       'estado': estado,
+      'esServicio': esServicio,
       'fechaRegistro': FieldValue.serverTimestamp(),
     });
     // Si el producto se crea con existencia inicial, esa cantidad también
@@ -93,6 +95,7 @@ class ProductoRepository {
       precioVenta2: precioVenta2,
       precioVenta3: precioVenta3,
       estado: estado,
+      esServicio: esServicio,
     );
   }
 
@@ -108,6 +111,7 @@ class ProductoRepository {
     required double precioVenta2,
     required double precioVenta3,
     required bool estado,
+    bool esServicio = false,
   }) async {
     final codigoFinal = codigo.trim().isEmpty ? _generarCodigo() : codigo.trim();
     final existe = await _col.where('codigo', isEqualTo: codigoFinal).limit(2).get();
@@ -126,6 +130,7 @@ class ProductoRepository {
       'precioVenta2': precioVenta2,
       'precioVenta3': precioVenta3,
       'estado': estado,
+      'esServicio': esServicio,
     });
   }
 

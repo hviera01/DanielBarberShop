@@ -186,9 +186,11 @@ class VentaExportService {
     return pw.TableHelper.fromTextArray(
       headers: ['Cant.', 'Descripción', conIsv ? 'P. Unitario (c/ISV)' : 'P. Unitario (s/ISV)', 'Desc. %', 'Importe'],
       data: venta.detalle.map((item) {
+        final nombreBarbero = item.nombreBarbero as String;
+        final descripcion = (item.esServicio as bool) && nombreBarbero.isNotEmpty ? '${item.nombreProducto}\n(Barbero: $nombreBarbero)' : item.nombreProducto as String;
         return [
           _formatoCantidad(item.cantidad),
-          item.nombreProducto,
+          descripcion,
           formatearMoneda(precioMostrado(item)),
           item.descuentoPorcentaje > 0 ? '${_formatoCantidad(item.descuentoPorcentaje)}%' : '-',
           formatearMoneda(importeMostrado(item)),
@@ -459,6 +461,8 @@ class VentaExportService {
                       // negrita se ve más "manchado" y termina siendo menos
                       // claro que el peso normal, sobre todo en letra chica.
                       pw.Text(item.nombreProducto, style: const pw.TextStyle(fontSize: fSmall)),
+                      if ((item.esServicio as bool) && (item.nombreBarbero as String).isNotEmpty)
+                        pw.Text('  Barbero: ${item.nombreBarbero}', style: const pw.TextStyle(fontSize: fSmall)),
                       pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [

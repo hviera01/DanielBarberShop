@@ -50,6 +50,13 @@ class CarritoVentaState {
   final double pagoCon;
   final double cambio;
   final double descuentoGlobalPorcentaje;
+  // Comisión bancaria (%) cuando metodoPago == 'Tarjeta'. El cliente ve y
+  // paga el total completo (totalAPagar no cambia); esto solo se guarda
+  // como metadata de la venta para que reportes de caja puedan calcular el
+  // neto que realmente ingresó, sin mezclar ambos conceptos en un mismo
+  // campo (a diferencia del sistema viejo, que sobreescribía el total
+  // registrado con el neto).
+  final double porcentajeTarjeta;
 
   CarritoVentaState({
     this.idEnEspera,
@@ -67,6 +74,7 @@ class CarritoVentaState {
     this.pagoCon = 0,
     this.cambio = 0,
     this.descuentoGlobalPorcentaje = 0,
+    this.porcentajeTarjeta = 0,
   }) : fecha = fecha ?? DateTime.now();
 
   bool get esCotizacion => tipoDocumento == 'Cotizacion';
@@ -119,6 +127,7 @@ class CarritoVentaState {
     double? pagoCon,
     double? cambio,
     double? descuentoGlobalPorcentaje,
+    double? porcentajeTarjeta,
   }) {
     return CarritoVentaState(
       idEnEspera: idEnEspera == _sinCambio ? this.idEnEspera : idEnEspera as String?,
@@ -136,6 +145,7 @@ class CarritoVentaState {
       pagoCon: pagoCon ?? this.pagoCon,
       cambio: cambio ?? this.cambio,
       descuentoGlobalPorcentaje: descuentoGlobalPorcentaje ?? this.descuentoGlobalPorcentaje,
+      porcentajeTarjeta: porcentajeTarjeta ?? this.porcentajeTarjeta,
     );
   }
 }
@@ -172,9 +182,31 @@ class CarritoVentaNotifier extends Notifier<CarritoVentaState> {
       subtotal: _subtotalLinea(precioSinIsv, 1, 0),
       precioCompraUsado: precioCompraUsado > 0 ? precioCompraUsado : producto.precioCompra,
       reembasado: reembasado,
+      esServicio: producto.esServicio,
     );
     state = state.copyWith(items: [...state.items, item]);
   }
+
+  /// Asigna el barbero que atendió una línea de servicio (obligatorio antes
+  /// de poder cerrar la venta si esa línea es un servicio). [pctComision] es
+  /// el % vigente del barbero en este momento: se guarda tal cual en la
+  /// línea, no se vuelve a consultar después.
+  void establecerBarberoLinea(int index, {required String idBarbero, required String nombreBarbero, required double pctComision}) {
+    final nuevos = [...state.items];
+    nuevos[index] = nuevos[index].copyWith(idBarbero: idBarbero, nombreBarbero: nombreBarbero, pctComisionBarbero: pctComision);
+    state = state.copyWith(items: nuevos);
+  }
+
+  /// Asigna quién "vendió" una línea de producto físico (además del cajero
+  /// que registra la venta completa): 'N/A', o un usuario/barbero puntual,
+  /// para que ese producto cuente en SU comisión de venta de producto.
+  void establecerVendidoPorLinea(int index, {required String tipo, required String id, required String nombre}) {
+    final nuevos = [...state.items];
+    nuevos[index] = nuevos[index].copyWith(vendidoPorTipo: tipo, vendidoPorId: id, vendidoPorNombre: nombre);
+    state = state.copyWith(items: nuevos);
+  }
+
+  void establecerPorcentajeTarjeta(double v) => state = state.copyWith(porcentajeTarjeta: v);
 
   void quitarItem(int index) {
     final nuevos = [...state.items]..removeAt(index);
@@ -233,7 +265,9 @@ class CarritoVentaNotifier extends Notifier<CarritoVentaState> {
     );
   }
 
-  void establecerMetodoPago(String v) => state = state.copyWith(metodoPago: v);
+  void establecerMetodoPago(String v) {
+    state = state.copyWith(metodoPago: v, porcentajeTarjeta: v == 'Tarjeta' ? state.porcentajeTarjeta : 0);
+  }
   void establecerCliente({required String documento, required String nombre}) {
     state = state.copyWith(documentoCliente: documento, nombreCliente: nombre);
   }
@@ -286,6 +320,13 @@ class CarritoVentaNotifier extends Notifier<CarritoVentaState> {
                 subtotal: item.subtotal,
                 precioCompraUsado: item.precioCompraUsado,
                 descuentoPorcentaje: item.descuentoPorcentaje,
+                esServicio: item.esServicio,
+                idBarbero: item.idBarbero,
+                nombreBarbero: item.nombreBarbero,
+                pctComisionBarbero: item.pctComisionBarbero,
+                vendidoPorTipo: item.vendidoPorTipo,
+                vendidoPorId: item.vendidoPorId,
+                vendidoPorNombre: item.vendidoPorNombre,
               ))
           .toList(),
       tipoDocumento: (forzarFactura && venta.tipoDocumento == 'Cotizacion') ? 'Factura' : venta.tipoDocumento,

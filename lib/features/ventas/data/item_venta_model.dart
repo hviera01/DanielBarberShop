@@ -8,6 +8,22 @@ class ItemVentaModel {
   final double precioCompraUsado;
   final bool reembasado;
   final double descuentoPorcentaje;
+  // Servicio de barbería (ej. corte): exige barbero, no descuenta stock.
+  final bool esServicio;
+  final String idBarbero;
+  final String nombreBarbero;
+  // % de comisión del barbero capturado al momento de asignarlo a la línea
+  // (no se recalcula después aunque el barbero cambie su % más adelante).
+  // El monto de comisión se calcula sobre el subtotal en el momento que se
+  // necesita (reportes), no se guarda aparte para no desincronizarse si el
+  // cajero edita precio/cantidad después de asignar el barbero.
+  final double pctComisionBarbero;
+  // Solo aplica a líneas de producto físico: quién lo vendió además del
+  // cajero que registra la venta, para efectos de comisión ('N/A',
+  // 'Usuario' o 'Barbero').
+  final String vendidoPorTipo;
+  final String vendidoPorId;
+  final String vendidoPorNombre;
 
   ItemVentaModel({
     required this.idProducto,
@@ -19,6 +35,13 @@ class ItemVentaModel {
     required this.precioCompraUsado,
     this.reembasado = false,
     this.descuentoPorcentaje = 0,
+    this.esServicio = false,
+    this.idBarbero = '',
+    this.nombreBarbero = '',
+    this.pctComisionBarbero = 0,
+    this.vendidoPorTipo = 'N/A',
+    this.vendidoPorId = '',
+    this.vendidoPorNombre = '',
   });
 
   factory ItemVentaModel.fromMap(Map<String, dynamic> data) {
@@ -32,6 +55,13 @@ class ItemVentaModel {
       precioCompraUsado: (data['precioCompraUsado'] ?? 0).toDouble(),
       reembasado: data['reembasado'] ?? false,
       descuentoPorcentaje: (data['descuentoPorcentaje'] ?? 0).toDouble(),
+      esServicio: data['esServicio'] ?? false,
+      idBarbero: data['idBarbero'] ?? '',
+      nombreBarbero: data['nombreBarbero'] ?? '',
+      pctComisionBarbero: (data['pctComisionBarbero'] ?? 0).toDouble(),
+      vendidoPorTipo: data['vendidoPorTipo'] ?? 'N/A',
+      vendidoPorId: data['vendidoPorId'] ?? '',
+      vendidoPorNombre: data['vendidoPorNombre'] ?? '',
     );
   }
 
@@ -46,6 +76,13 @@ class ItemVentaModel {
       'precioCompraUsado': precioCompraUsado,
       'reembasado': reembasado,
       'descuentoPorcentaje': descuentoPorcentaje,
+      'esServicio': esServicio,
+      'idBarbero': idBarbero,
+      'nombreBarbero': nombreBarbero,
+      'pctComisionBarbero': pctComisionBarbero,
+      'vendidoPorTipo': vendidoPorTipo,
+      'vendidoPorId': vendidoPorId,
+      'vendidoPorNombre': vendidoPorNombre,
     };
   }
 
@@ -56,6 +93,12 @@ class ItemVentaModel {
     double? subtotal,
     double? descuentoPorcentaje,
     double? precioCompraUsado,
+    String? idBarbero,
+    String? nombreBarbero,
+    double? pctComisionBarbero,
+    String? vendidoPorTipo,
+    String? vendidoPorId,
+    String? vendidoPorNombre,
   }) {
     return ItemVentaModel(
       idProducto: idProducto,
@@ -67,6 +110,13 @@ class ItemVentaModel {
       precioCompraUsado: precioCompraUsado ?? this.precioCompraUsado,
       reembasado: reembasado,
       descuentoPorcentaje: descuentoPorcentaje ?? this.descuentoPorcentaje,
+      esServicio: esServicio,
+      idBarbero: idBarbero ?? this.idBarbero,
+      nombreBarbero: nombreBarbero ?? this.nombreBarbero,
+      pctComisionBarbero: pctComisionBarbero ?? this.pctComisionBarbero,
+      vendidoPorTipo: vendidoPorTipo ?? this.vendidoPorTipo,
+      vendidoPorId: vendidoPorId ?? this.vendidoPorId,
+      vendidoPorNombre: vendidoPorNombre ?? this.vendidoPorNombre,
     );
   }
 }

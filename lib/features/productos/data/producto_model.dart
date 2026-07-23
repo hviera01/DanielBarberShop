@@ -11,6 +11,12 @@ class ProductoModel {
   final double precioVenta2;
   final double precioVenta3;
   final bool estado;
+  // Un servicio (ej. corte de cabello) no lleva control de stock y, al
+  // venderse, exige elegir qué barbero lo atendió (ver carrito y
+  // registrar_venta_screen). A diferencia del sistema viejo, que inferría
+  // "es servicio" de una categoría mágica (IdCategoria == 50), acá es un
+  // campo explícito del producto.
+  final bool esServicio;
 
   ProductoModel({
     required this.id,
@@ -25,6 +31,7 @@ class ProductoModel {
     required this.precioVenta2,
     required this.precioVenta3,
     required this.estado,
+    this.esServicio = false,
   });
 
   factory ProductoModel.fromMap(String id, Map<String, dynamic> data) {
@@ -41,6 +48,7 @@ class ProductoModel {
       precioVenta2: (data['precioVenta2'] ?? 0).toDouble(),
       precioVenta3: (data['precioVenta3'] ?? 0).toDouble(),
       estado: data['estado'] ?? true,
+      esServicio: data['esServicio'] ?? false,
     );
   }
 

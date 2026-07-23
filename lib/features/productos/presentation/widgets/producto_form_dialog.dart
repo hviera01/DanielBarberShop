@@ -29,6 +29,7 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
 
   String? _idCategoria;
   bool _activo = true;
+  bool _esServicio = false;
   bool _mostrarNivelesExtra = false;
   bool _guardando = false;
   String? _error;
@@ -50,6 +51,7 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
       _mostrarNivelesExtra = p.precioVenta2 > 0 || p.precioVenta3 > 0;
       _idCategoria = p.idCategoria;
       _activo = p.estado;
+      _esServicio = p.esServicio;
     }
   }
 
@@ -96,12 +98,13 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
               nombre: nombre,
               descripcion: _descripcionController.text,
               idCategoria: _idCategoria!,
-              stock: _parseDouble(_stockController.text),
+              stock: _esServicio ? 0 : _parseDouble(_stockController.text),
               precioCompra: _parseDouble(_precioCompraController.text),
               precioVenta: _parseDouble(_precioVentaController.text),
               precioVenta2: _parseDouble(_precioVenta2Controller.text),
               precioVenta3: _parseDouble(_precioVenta3Controller.text),
               estado: _activo,
+              esServicio: _esServicio,
             )
             .timeout(const Duration(seconds: 12)),
       );
@@ -130,6 +133,7 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
               precioVenta2: _parseDouble(_precioVenta2Controller.text),
               precioVenta3: _parseDouble(_precioVenta3Controller.text),
               estado: _activo,
+              esServicio: _esServicio,
             )
             .timeout(const Duration(seconds: 12));
         return true;
@@ -298,18 +302,39 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
                       error: (e, st) => Text('Error cargando categorías', style: GoogleFonts.poppins(color: Colors.red, fontSize: 12)),
                     ),
                     const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      decoration: BoxDecoration(color: const Color(0xFFE8EAF0), borderRadius: BorderRadius.circular(12)),
+                      child: Row(
+                        children: [
+                          Icon(Icons.content_cut_outlined, size: 18, color: Colors.grey.shade700),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text('Es un servicio (no lleva stock)', style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade700)),
+                          ),
+                          Switch(
+                            value: _esServicio,
+                            activeThumbColor: const Color(0xFF0F1B3D),
+                            onChanged: editando ? null : (v) => setState(() => _esServicio = v),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
                     Row(
                       children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _stockController,
-                            enabled: !editando,
-                            keyboardType: TextInputType.number,
-                            style: GoogleFonts.poppins(fontSize: 14),
-                            decoration: _decoracion(editando ? 'Existencia (ajustar abajo)' : 'Existencia inicial'),
+                        if (!_esServicio) ...[
+                          Expanded(
+                            child: TextField(
+                              controller: _stockController,
+                              enabled: !editando,
+                              keyboardType: TextInputType.number,
+                              style: GoogleFonts.poppins(fontSize: 14),
+                              decoration: _decoracion(editando ? 'Existencia (ajustar abajo)' : 'Existencia inicial'),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
+                          const SizedBox(width: 12),
+                        ],
                         Expanded(
                           child: TextField(
                             controller: _precioCompraController,
