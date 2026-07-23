@@ -1,4 +1,4 @@
-package com.supercolor.sistema_ventas
+package com.danielbarbershop.sistema_ventas
 
 import io.flutter.embedding.android.FlutterActivity
 

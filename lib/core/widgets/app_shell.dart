@@ -163,7 +163,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       height: 64,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: const BoxDecoration(color: Color(0xFFC62828)),
+        decoration: const BoxDecoration(color: Color(0xFF0F1B3D)),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final esAngosto = constraints.maxWidth < 420;
@@ -193,7 +193,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                       if (!esAngosto) ...[
                         const SizedBox(width: 12),
                         Text(
-                          'SUPERCOLOR',
+                          "DANIEL'S BARBER SHOP",
                           style: GoogleFonts.poppins(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 1),
                         ),
                       ],
@@ -270,20 +270,20 @@ class _AppShellState extends ConsumerState<AppShell> {
               margin: const EdgeInsets.only(right: 6, top: 6),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: activo ? const Color(0xFFFCE9E9) : Colors.transparent,
+                color: activo ? const Color(0xFFE6E9F2) : Colors.transparent,
                 borderRadius: BorderRadius.circular(10),
-                border: activo ? Border.all(color: const Color(0xFFC62828).withOpacity(0.25)) : null,
+                border: activo ? Border.all(color: const Color(0xFF0F1B3D).withOpacity(0.25)) : null,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(tab.icono, size: 16, color: activo ? const Color(0xFFC62828) : Colors.grey.shade500),
+                  Icon(tab.icono, size: 16, color: activo ? const Color(0xFF0F1B3D) : Colors.grey.shade500),
                   const SizedBox(width: 8),
                   Text(
                     tab.titulo,
                     style: GoogleFonts.poppins(
                       fontSize: 12.5,
-                      color: activo ? const Color(0xFFC62828) : Colors.grey.shade600,
+                      color: activo ? const Color(0xFF0F1B3D) : Colors.grey.shade600,
                       fontWeight: activo ? FontWeight.w600 : FontWeight.w400,
                     ),
                   ),

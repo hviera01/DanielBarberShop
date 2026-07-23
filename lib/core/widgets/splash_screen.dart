@@ -82,12 +82,12 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
               ),
               const SizedBox(height: 24),
               Text(
-                'SUPERCOLOR',
+                "DANIEL'S BARBER SHOP",
                 style: GoogleFonts.poppins(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: 1.2),
               ),
               const SizedBox(height: 6),
               Text(
-                'La decisión correcta',
+                'Estilo & Tradición',
                 style: GoogleFonts.poppins(color: Colors.white.withOpacity(0.7), fontSize: 12, letterSpacing: 0.6),
               ),
             ],

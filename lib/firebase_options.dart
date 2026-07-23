@@ -47,28 +47,28 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyDDqQ3pwmxEFY7mBve2wRGgop4nLBjyHjQ',
-    appId: '1:593847407002:web:2308812d7159e4aaef6a23',
-    messagingSenderId: '593847407002',
-    projectId: 'supercolor-25505',
-    authDomain: 'supercolor-25505.firebaseapp.com',
-    storageBucket: 'supercolor-25505.firebasestorage.app',
+    apiKey: 'AIzaSyCbYE4iTdDHeXO063qzY4zpzkxO3AKn4BQ',
+    appId: '1:570318020676:web:8f9707125bc33a34a7dc11',
+    messagingSenderId: '570318020676',
+    projectId: 'danielbarbershop-53e3f',
+    authDomain: 'danielbarbershop-53e3f.firebaseapp.com',
+    storageBucket: 'danielbarbershop-53e3f.firebasestorage.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAZfwfPmjOb7ynSDL66BaI2mHnLtbTizbc',
-    appId: '1:593847407002:android:83e8d55370a9dad5ef6a23',
-    messagingSenderId: '593847407002',
-    projectId: 'supercolor-25505',
-    storageBucket: 'supercolor-25505.firebasestorage.app',
+    apiKey: 'AIzaSyAZyqs7UH_Vl2STvrrVYZRYEr_GLz4IYq8',
+    appId: '1:570318020676:android:d941742e46e13f29a7dc11',
+    messagingSenderId: '570318020676',
+    projectId: 'danielbarbershop-53e3f',
+    storageBucket: 'danielbarbershop-53e3f.firebasestorage.app',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyDDqQ3pwmxEFY7mBve2wRGgop4nLBjyHjQ',
-    appId: '1:593847407002:web:f1b7379182d091a0ef6a23',
-    messagingSenderId: '593847407002',
-    projectId: 'supercolor-25505',
-    authDomain: 'supercolor-25505.firebaseapp.com',
-    storageBucket: 'supercolor-25505.firebasestorage.app',
+    apiKey: 'AIzaSyCbYE4iTdDHeXO063qzY4zpzkxO3AKn4BQ',
+    appId: '1:570318020676:web:859539a933a722eca7dc11',
+    messagingSenderId: '570318020676',
+    projectId: 'danielbarbershop-53e3f',
+    authDomain: 'danielbarbershop-53e3f.firebaseapp.com',
+    storageBucket: 'danielbarbershop-53e3f.firebasestorage.app',
   );
 }

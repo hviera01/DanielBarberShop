@@ -27,7 +27,7 @@ Future<T?> ejecutarConReintento<T>(BuildContext context, Future<T> Function() ac
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
             children: [
-              const Icon(Icons.wifi_off_outlined, color: Color(0xFFC62828)),
+              const Icon(Icons.wifi_off_outlined, color: Color(0xFF0F1B3D)),
               const SizedBox(width: 10),
               Expanded(child: Text('No se pudo guardar', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15))),
             ],
@@ -41,7 +41,7 @@ Future<T?> ejecutarConReintento<T>(BuildContext context, Future<T> Function() ac
           actions: [
             TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Cancelar', style: GoogleFonts.poppins())),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFC62828)),
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0F1B3D)),
               onPressed: () => Navigator.pop(context, true),
               child: Text('Reintentar', style: GoogleFonts.poppins()),
             ),

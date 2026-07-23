@@ -33,7 +33,7 @@ List<ModuloMenu> obtenerModulos() {
     ModuloMenu(
       titulo: 'Usuarios',
       icono: Icons.people_alt_outlined,
-      color: const Color(0xFFC62828),
+      color: const Color(0xFF0F1B3D),
       subModulos: [
         SubModulo(titulo: 'Usuarios', icono: Icons.people_alt_outlined, moduleKey: 'usuarios', soloAdmin: true),
       ],
@@ -46,7 +46,6 @@ List<ModuloMenu> obtenerModulos() {
         SubModulo(titulo: 'Categorías', icono: Icons.category_outlined, moduleKey: 'categorias', soloAdmin: true),
         SubModulo(titulo: 'Inventario', icono: Icons.inventory_2_outlined, moduleKey: 'inventario', soloAdmin: true),
         SubModulo(titulo: 'Negocio', icono: Icons.store_outlined, moduleKey: 'negocio', soloAdmin: true),
-        SubModulo(titulo: 'Registro de Colores', icono: Icons.palette_outlined, moduleKey: 'colores'),
       ],
     ),
     ModuloMenu(

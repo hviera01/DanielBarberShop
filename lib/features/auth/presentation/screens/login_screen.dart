@@ -221,7 +221,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                           const SizedBox(height: 20),
                           Text(
-                            'SUPERCOLOR · La decisión correcta',
+                            "DANIEL'S BARBER SHOP · Estilo & Tradición",
                             style: GoogleFonts.poppins(
                               fontSize: 11,
                               color: Colors.grey.shade500,

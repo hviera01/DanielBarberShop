@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.supercolor" "\0"
-            VALUE "FileDescription", "Super Color" "\0"
+            VALUE "CompanyName", "com.danielbarbershop" "\0"
+            VALUE "FileDescription", "Daniel's Barber Shop" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "sistema_ventas" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.supercolor. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.danielbarbershop. All rights reserved." "\0"
             VALUE "OriginalFilename", "sistema_ventas.exe" "\0"
-            VALUE "ProductName", "Super Color" "\0"
+            VALUE "ProductName", "Daniel's Barber Shop" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
