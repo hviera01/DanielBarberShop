@@ -78,7 +78,7 @@ class _ClaveEspecialDialogState extends State<_ClaveEspecialDialog> {
               children: [
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: const Color(0xFFFBEAEA), borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(color: const Color(0xFFE6E9F2), borderRadius: BorderRadius.circular(12)),
                   child: const Icon(Icons.lock_outline, color: Color(0xFF0F1B3D), size: 22),
                 ),
                 const SizedBox(width: 12),

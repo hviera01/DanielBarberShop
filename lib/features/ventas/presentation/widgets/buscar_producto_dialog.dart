@@ -477,7 +477,7 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
           decoration: BoxDecoration(
-            color: seleccionada ? const Color(0xFFFBEAEA) : Colors.transparent,
+            color: seleccionada ? const Color(0xFFE6E9F2) : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             border: seleccionada ? Border.all(color: const Color(0xFF0F1B3D), width: 1.4) : Border.all(color: Colors.transparent, width: 1.4),
           ),
@@ -539,7 +539,7 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
           margin: const EdgeInsets.symmetric(vertical: 4),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: seleccionada ? const Color(0xFFFBEAEA) : Colors.transparent,
+            color: seleccionada ? const Color(0xFFE6E9F2) : Colors.transparent,
             borderRadius: BorderRadius.circular(14),
             border: seleccionada ? Border.all(color: const Color(0xFF0F1B3D), width: 1.4) : Border.all(color: Colors.transparent, width: 1.4),
           ),

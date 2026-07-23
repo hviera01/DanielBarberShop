@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../data/cliente_model.dart';
-import '../../providers/clientes_provider.dart';
+import '../../data/barbero_model.dart';
+import '../../providers/barberos_provider.dart';
 import '../../../../core/utils/texto_utils.dart';
-import '../widgets/cliente_form_dialog.dart';
+import '../widgets/barbero_form_dialog.dart';
 
-class ClientesScreen extends ConsumerStatefulWidget {
-  const ClientesScreen({super.key});
+class BarberosScreen extends ConsumerStatefulWidget {
+  const BarberosScreen({super.key});
 
   @override
-  ConsumerState<ClientesScreen> createState() => _ClientesScreenState();
+  ConsumerState<BarberosScreen> createState() => _BarberosScreenState();
 }
 
-class _ClientesScreenState extends ConsumerState<ClientesScreen> {
+class _BarberosScreenState extends ConsumerState<BarberosScreen> {
   final _busquedaController = TextEditingController();
   String? _filaSeleccionada;
 
@@ -24,25 +24,25 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
   }
 
   void _buscar() {
-    ref.read(clientesBusquedaProvider.notifier).actualizar(_busquedaController.text.trim());
+    ref.read(barberosBusquedaProvider.notifier).actualizar(_busquedaController.text.trim());
   }
 
   void _limpiarBusqueda() {
     _busquedaController.clear();
-    ref.read(clientesBusquedaProvider.notifier).actualizar('');
+    ref.read(barberosBusquedaProvider.notifier).actualizar('');
   }
 
-  void _abrirFormulario([ClienteModel? cliente]) {
-    showDialog(context: context, builder: (context) => ClienteFormDialog(cliente: cliente));
+  void _abrirFormulario([BarberoModel? barbero]) {
+    showDialog(context: context, builder: (context) => BarberoFormDialog(barbero: barbero));
   }
 
-  Future<void> _eliminar(ClienteModel cliente) async {
+  Future<void> _eliminar(BarberoModel barbero) async {
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Eliminar cliente', style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
-        content: Text('¿Seguro que querés eliminar este cliente?', style: GoogleFonts.poppins(fontSize: 13)),
+        title: Text('Eliminar barbero', style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
+        content: Text('¿Seguro que querés eliminar este barbero?', style: GoogleFonts.poppins(fontSize: 13)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Cancelar', style: GoogleFonts.poppins())),
           FilledButton(
@@ -54,16 +54,16 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
       ),
     );
     if (confirmar != true) return;
-    await ref.read(clienteRepositoryProvider).eliminar(cliente.id);
+    await ref.read(barberoRepositoryProvider).eliminar(barbero.id);
   }
 
-  void _manejarAccion(String valor, ClienteModel cliente) {
+  void _manejarAccion(String valor, BarberoModel barbero) {
     switch (valor) {
       case 'editar':
-        _abrirFormulario(cliente);
+        _abrirFormulario(barbero);
         break;
       case 'eliminar':
-        _eliminar(cliente);
+        _eliminar(barbero);
         break;
     }
   }
@@ -85,9 +85,9 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final clientesAsync = ref.watch(clientesStreamProvider);
-    final busqueda = ref.watch(clientesBusquedaProvider);
-    final vista = ref.watch(clientesVistaProvider);
+    final barberosAsync = ref.watch(barberosStreamProvider);
+    final busqueda = ref.watch(barberosBusquedaProvider);
+    final vista = ref.watch(barberosVistaProvider);
 
     return Container(
       color: const Color(0xFFF2F3F7),
@@ -100,7 +100,7 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
               headerSliverBuilder: (context, innerBoxIsScrolled) => [
                 SliverToBoxAdapter(
                   child: Text(
-                    'Clientes',
+                    'Barberos',
                     style: GoogleFonts.poppins(fontSize: esMovil ? 19 : 22, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A)),
                   ),
                 ),
@@ -113,7 +113,7 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
                       SizedBox(width: esMovil ? constraints.maxWidth : 210, child: _selectorVista(vista)),
                       SizedBox(width: esMovil ? constraints.maxWidth : 320, child: _buscador(busqueda)),
                       OutlinedButton.icon(
-                        onPressed: () => ref.invalidate(clientesStreamProvider),
+                        onPressed: () => ref.invalidate(barberosStreamProvider),
                         icon: const Icon(Icons.refresh, size: 18),
                         label: Text('Refrescar', style: GoogleFonts.poppins(fontSize: 13)),
                         style: OutlinedButton.styleFrom(
@@ -126,7 +126,7 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
                       FilledButton.icon(
                         onPressed: () => _abrirFormulario(),
                         icon: const Icon(Icons.add, size: 18),
-                        label: Text('Nuevo Cliente', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+                        label: Text('Nuevo Barbero', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
                         style: FilledButton.styleFrom(
                           backgroundColor: const Color(0xFF0F1B3D),
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -145,38 +145,38 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
                   border: Border.all(color: const Color(0xFFAEB4C0), width: 1.3),
                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.14), blurRadius: 26, offset: const Offset(0, 12))],
                 ),
-                child: clientesAsync.when(
-                      data: (clientes) {
-                        var lista = clientes;
-                        if (busqueda.isNotEmpty) {
-                          lista = lista.where((c) => coincideFuzzy(c.textoBusqueda, busqueda)).toList();
-                        } else if (vista == 'filtrados') {
-                          lista = [];
-                        }
+                child: barberosAsync.when(
+                  data: (barberos) {
+                    var lista = barberos;
+                    if (busqueda.isNotEmpty) {
+                      lista = lista.where((b) => coincideFuzzy(b.textoBusqueda, busqueda)).toList();
+                    } else if (vista == 'filtrados') {
+                      lista = [];
+                    }
 
-                        if (lista.isEmpty) {
-                          return Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.groups_outlined, size: 56, color: Colors.grey.shade300),
-                                const SizedBox(height: 12),
-                                Text(
-                                  vista == 'filtrados' && busqueda.isEmpty ? 'Escribí algo y presioná buscar' : 'No hay clientes encontrados',
-                                  textAlign: TextAlign.center,
-                                  style: GoogleFonts.poppins(color: Colors.grey.shade500),
-                                ),
-                              ],
+                    if (lista.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.content_cut_outlined, size: 56, color: Colors.grey.shade300),
+                            const SizedBox(height: 12),
+                            Text(
+                              vista == 'filtrados' && busqueda.isEmpty ? 'Escribí algo y presioná buscar' : 'No hay barberos encontrados',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.poppins(color: Colors.grey.shade500),
                             ),
-                          );
-                        }
+                          ],
+                        ),
+                      );
+                    }
 
-                        return esMovil ? _tarjetas(lista) : _tabla(lista);
-                      },
-                      loading: () => const Center(child: CircularProgressIndicator(color: Color(0xFF0F1B3D))),
-                      error: (e, st) => Center(child: Text('Error: $e', style: GoogleFonts.poppins(color: Colors.red))),
-                    ),
-                  ),
+                    return esMovil ? _tarjetas(lista) : _tabla(lista);
+                  },
+                  loading: () => const Center(child: CircularProgressIndicator(color: Color(0xFF0F1B3D))),
+                  error: (e, st) => Center(child: Text('Error: $e', style: GoogleFonts.poppins(color: Colors.red))),
+                ),
+              ),
             ),
           );
         },
@@ -195,12 +195,12 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
           isExpanded: true,
           style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF1A1A1A)),
           items: const [
-            DropdownMenuItem(value: 'filtrados', child: Text('Clientes filtrados')),
+            DropdownMenuItem(value: 'filtrados', child: Text('Barberos filtrados')),
             DropdownMenuItem(value: 'todos', child: Text('Mostrar todos')),
           ],
           onChanged: (v) {
             if (v == null) return;
-            ref.read(clientesVistaProvider.notifier).actualizar(v);
+            ref.read(barberosVistaProvider.notifier).actualizar(v);
           },
         ),
       ),
@@ -221,7 +221,7 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
               controller: _busquedaController,
               style: GoogleFonts.poppins(fontSize: 13),
               decoration: InputDecoration(
-                hintText: 'Buscar por DNI, nombre, correo o teléfono...',
+                hintText: 'Buscar por documento, nombre, teléfono o especialidad...',
                 hintStyle: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade400),
                 border: InputBorder.none,
                 isDense: true,
@@ -236,10 +236,10 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
     );
   }
 
-  Widget _tabla(List<ClienteModel> lista) {
+  Widget _tabla(List<BarberoModel> lista) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final mostrarCorreo = constraints.maxWidth >= 950;
+        final mostrarEspecialidad = constraints.maxWidth >= 950;
 
         return ListView.builder(
           itemCount: lista.length + 1,
@@ -251,34 +251,34 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
                 decoration: BoxDecoration(color: const Color(0xFFECEEF3), borderRadius: const BorderRadius.vertical(top: Radius.circular(16)), border: Border(bottom: BorderSide(color: Colors.grey.shade300))),
                 child: Row(
                   children: [
-                    _celdaHeader('DNI', 2),
-                    _celdaHeader('NOMBRE COMPLETO', 3),
-                    if (mostrarCorreo) _celdaHeader('CORREO', 3),
+                    _celdaHeader('NOMBRE', 3),
                     _celdaHeader('TELÉFONO', 2),
+                    if (mostrarEspecialidad) _celdaHeader('ESPECIALIDAD', 2),
+                    _celdaHeader('% COMISIÓN', 1),
                     _celdaHeader('ESTADO', 1),
                     const SizedBox(width: 56),
                   ],
                 ),
               );
             }
-            final cliente = lista[index - 1];
-            final seleccionada = _filaSeleccionada == cliente.id;
+            final barbero = lista[index - 1];
+            final seleccionado = _filaSeleccionada == barbero.id;
             return Column(
               children: [
                 if (index > 1) Divider(height: 1, color: Colors.grey.shade200),
                 InkWell(
-                  onTap: () => setState(() => _filaSeleccionada = seleccionada ? null : cliente.id),
+                  onTap: () => setState(() => _filaSeleccionada = seleccionado ? null : barbero.id),
                   child: Container(
-                    color: seleccionada ? const Color(0xFFE6E9F2) : Colors.white,
+                    color: seleccionado ? const Color(0xFFE6E9F2) : Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     child: Row(
                       children: [
-                        _celda(2, cliente.dni.isEmpty ? '-' : cliente.dni, peso: FontWeight.w600),
-                        _celda(3, cliente.nombreCompleto.isEmpty ? '-' : cliente.nombreCompleto),
-                        if (mostrarCorreo) _celda(3, cliente.correo.isEmpty ? '-' : cliente.correo, gris: true),
-                        _celda(2, cliente.telefono.isEmpty ? '-' : cliente.telefono, gris: true),
-                        Expanded(flex: 1, child: _chipEstado(cliente.estado)),
-                        SizedBox(width: 56, child: _celdaAcciones(cliente)),
+                        _celda(3, barbero.nombreCompleto.isEmpty ? '-' : barbero.nombreCompleto, peso: FontWeight.w600),
+                        _celda(2, barbero.telefono.isEmpty ? '-' : barbero.telefono, gris: true),
+                        if (mostrarEspecialidad) _celda(2, barbero.especialidad.isEmpty ? '-' : barbero.especialidad, gris: true),
+                        _celda(1, '${barbero.porcentajeComision.toStringAsFixed(0)}%'),
+                        Expanded(flex: 1, child: _chipEstado(barbero.estado)),
+                        SizedBox(width: 56, child: _celdaAcciones(barbero)),
                       ],
                     ),
                   ),
@@ -324,7 +324,7 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
     );
   }
 
-  Widget _celdaAcciones(ClienteModel cliente) {
+  Widget _celdaAcciones(BarberoModel barbero) {
     return PopupMenuButton<String>(
       tooltip: 'Más acciones',
       padding: EdgeInsets.zero,
@@ -332,28 +332,28 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       elevation: 8,
       position: PopupMenuPosition.under,
-      onSelected: (valor) => _manejarAccion(valor, cliente),
+      onSelected: (valor) => _manejarAccion(valor, barbero),
       itemBuilder: (context) => _opcionesMenu(),
     );
   }
 
-  Widget _tarjetas(List<ClienteModel> lista) {
+  Widget _tarjetas(List<BarberoModel> lista) {
     return ListView.separated(
       padding: const EdgeInsets.all(14),
       itemCount: lista.length,
       separatorBuilder: (context, index) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
-        final cliente = lista[index];
-        final seleccionada = _filaSeleccionada == cliente.id;
+        final barbero = lista[index];
+        final seleccionado = _filaSeleccionada == barbero.id;
         return InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () => setState(() => _filaSeleccionada = seleccionada ? null : cliente.id),
+          onTap: () => setState(() => _filaSeleccionada = seleccionado ? null : barbero.id),
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: seleccionada ? const Color(0xFFE6E9F2) : Colors.white,
+              color: seleccionado ? const Color(0xFFE6E9F2) : Colors.white,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: seleccionada ? const Color(0xFF0F1B3D) : const Color(0xFFC7CBD3)),
+              border: Border.all(color: seleccionado ? const Color(0xFF0F1B3D) : const Color(0xFFC7CBD3)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -363,11 +363,11 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        cliente.nombreCompleto.isEmpty ? 'Sin nombre' : cliente.nombreCompleto,
+                        barbero.nombreCompleto.isEmpty ? 'Sin nombre' : barbero.nombreCompleto,
                         style: GoogleFonts.poppins(fontSize: 14.5, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A)),
                       ),
                     ),
-                    _celdaAcciones(cliente),
+                    _celdaAcciones(barbero),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -375,10 +375,10 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    if (cliente.dni.isNotEmpty) _chipInfo('DNI', cliente.dni),
-                    if (cliente.correo.isNotEmpty) _chipInfo('Correo', cliente.correo),
-                    if (cliente.telefono.isNotEmpty) _chipInfo('Teléfono', cliente.telefono),
-                    _chipEstado(cliente.estado),
+                    if (barbero.telefono.isNotEmpty) _chipInfo('Teléfono', barbero.telefono),
+                    if (barbero.especialidad.isNotEmpty) _chipInfo('Especialidad', barbero.especialidad),
+                    _chipInfo('Comisión', '${barbero.porcentajeComision.toStringAsFixed(0)}%'),
+                    _chipEstado(barbero.estado),
                   ],
                 ),
               ],

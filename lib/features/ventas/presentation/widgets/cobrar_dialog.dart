@@ -63,7 +63,7 @@ class _CobrarDialogState extends State<CobrarDialog> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              decoration: BoxDecoration(color: const Color(0xFFFBEAEA), borderRadius: BorderRadius.circular(14)),
+              decoration: BoxDecoration(color: const Color(0xFFE6E9F2), borderRadius: BorderRadius.circular(14)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

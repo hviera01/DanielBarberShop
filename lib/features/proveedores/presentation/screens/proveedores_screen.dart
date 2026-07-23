@@ -269,7 +269,7 @@ class _ProveedoresScreenState extends ConsumerState<ProveedoresScreen> {
                 InkWell(
                   onTap: () => setState(() => _filaSeleccionada = seleccionado ? null : proveedor.id),
                   child: Container(
-                    color: seleccionado ? const Color(0xFFFBEAEA) : Colors.white,
+                    color: seleccionado ? const Color(0xFFE6E9F2) : Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     child: Row(
                       children: [
@@ -351,7 +351,7 @@ class _ProveedoresScreenState extends ConsumerState<ProveedoresScreen> {
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: seleccionado ? const Color(0xFFFBEAEA) : Colors.white,
+              color: seleccionado ? const Color(0xFFE6E9F2) : Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: seleccionado ? const Color(0xFF0F1B3D) : const Color(0xFFC7CBD3)),
             ),

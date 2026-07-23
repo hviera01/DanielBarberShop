@@ -84,6 +84,14 @@ List<ModuloMenu> obtenerModulos() {
       ],
     ),
     ModuloMenu(
+      titulo: 'Barberos',
+      icono: Icons.content_cut_outlined,
+      color: const Color(0xFF0F1B3D),
+      subModulos: [
+        SubModulo(titulo: 'Barberos', icono: Icons.content_cut_outlined, moduleKey: 'barberos', soloAdmin: true),
+      ],
+    ),
+    ModuloMenu(
       titulo: 'Créditos',
       icono: Icons.credit_card_outlined,
       color: const Color(0xFFEC4899),

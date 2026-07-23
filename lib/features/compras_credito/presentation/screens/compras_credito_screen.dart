@@ -457,7 +457,7 @@ class _ComprasCreditoScreenState extends ConsumerState<ComprasCreditoScreen> {
                 InkWell(
                   onTap: () => setState(() => _filaSeleccionada = seleccionada ? null : compra.id),
                   child: Container(
-                    color: seleccionada ? const Color(0xFFFBEAEA) : Colors.white,
+                    color: seleccionada ? const Color(0xFFE6E9F2) : Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     child: Row(
                       children: [
@@ -532,7 +532,7 @@ class _ComprasCreditoScreenState extends ConsumerState<ComprasCreditoScreen> {
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: seleccionada ? const Color(0xFFFBEAEA) : Colors.white,
+              color: seleccionada ? const Color(0xFFE6E9F2) : Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: seleccionada ? const Color(0xFF0F1B3D) : const Color(0xFFC7CBD3)),
             ),

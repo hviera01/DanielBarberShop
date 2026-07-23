@@ -443,7 +443,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                       setState(() => _filaSeleccionada = seleccionada ? null : producto.id);
                     },
                     child: Container(
-                      color: seleccionada ? const Color(0xFFFBEAEA) : Colors.white,
+                      color: seleccionada ? const Color(0xFFE6E9F2) : Colors.white,
                       // Alto fijo en vez de IntrinsicHeight: con alto fijo, Flutter
                       // no necesita un segundo pase de layout por fila para saber
                       // cuánto "estirar" cada celda (lo que exigía IntrinsicHeight),
@@ -513,7 +513,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
           },
           child: Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: seleccionada ? const Color(0xFFFBEAEA) : Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: seleccionada ? const Color(0xFF0F1B3D) : const Color(0xFFC7CBD3))),
+            decoration: BoxDecoration(color: seleccionada ? const Color(0xFFE6E9F2) : Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: seleccionada ? const Color(0xFF0F1B3D) : const Color(0xFFC7CBD3))),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

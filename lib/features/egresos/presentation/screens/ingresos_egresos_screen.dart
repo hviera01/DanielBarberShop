@@ -448,7 +448,7 @@ class _IngresosEgresosScreenState extends ConsumerState<IngresosEgresosScreen> {
           return InkWell(
             onTap: () => _seleccionarMovimiento(m),
             child: Container(
-              color: seleccionado ? const Color(0xFFFBEAEA) : null,
+              color: seleccionado ? const Color(0xFFE6E9F2) : null,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 children: [

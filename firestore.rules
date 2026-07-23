@@ -51,6 +51,10 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /barberos/{idBarbero} {
+      allow read, write: if true;
+    }
+
     match /ventasCredito/{idCredito} {
       allow read, write: if true;
 
