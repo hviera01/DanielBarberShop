@@ -49,7 +49,7 @@ class ProductoExportService {
         header: (context) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Text('Inventario · DANIEL'S BARBER SHOP', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColor.fromInt(0xFF0F1B3D))),
+            pw.Text("Inventario · DANIEL'S BARBER SHOP", style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColor.fromInt(0xFF0F1B3D))),
             pw.SizedBox(height: 4),
             pw.Text('Total de productos: ${lista.length}', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
             pw.SizedBox(height: 14),
