@@ -68,7 +68,11 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   final _descuentoGlobalController = TextEditingController();
   final _porcentajeTarjetaController = TextEditingController();
   bool _datosExpandidos = false;
-  bool _precioCarritoConIsv = true;
+  // Este negocio no cobra ISV: queda permanentemente en false (no hay
+  // selector para cambiarlo) para no tener que tocar cada lugar del archivo
+  // que todavía lo lee -son ramas muertas de bajo riesgo, mismo criterio que
+  // se usó para Variedades Lopsi.
+  final bool _precioCarritoConIsv = false;
   // true mientras está abierto el diálogo de "ver la tabla más grande" (ver
   // _expandirTablaProductos): mientras tanto, la tabla de acá abajo no
   // renderiza sus filas, porque esas filas comparten los mismos
@@ -496,6 +500,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
           return;
         }
         ref.read(carritoVentaProvider.notifier).agregarProductoDirecto(producto, precioSeleccionado: resultado.precio, reembasado: true);
+        await _pedirBarberoSiEsServicio(producto);
         return;
       }
       // Si dice que no, se ignora la falta de existencia y se agrega igual
@@ -503,6 +508,18 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     }
     if (!mounted) return;
     ref.read(carritoVentaProvider.notifier).agregarProductoDirecto(producto, precioSeleccionado: resultado.precio);
+    await _pedirBarberoSiEsServicio(producto);
+  }
+
+  // Igual que el sistema viejo: al agregar un servicio (ej. corte) pide de
+  // una vez quién lo atendió, en vez de dejar la línea sin barbero hasta que
+  // el cajero se acuerde de asignarlo (o hasta que la venta se rechace al
+  // confirmar por faltarle).
+  Future<void> _pedirBarberoSiEsServicio(ProductoModel producto) async {
+    if (!producto.esServicio || !mounted) return;
+    final carrito = ref.read(carritoVentaProvider);
+    if (carrito.items.isEmpty) return;
+    await _seleccionarBarbero(carrito.items.length - 1);
   }
 
   /// Busca un producto por código exacto (código de barras o código interno)
@@ -727,45 +744,30 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     ref.read(carritoVentaProvider.notifier).actualizarLinea(index, cantidad: nuevaCantidad);
   }
 
-  Future<void> _actualizarPrecio(int index, double nuevoPrecioConIsv) async {
-    if (nuevoPrecioConIsv < 0) {
+  // Este negocio no cobra ISV: el precio que ve/edita el cajero es el precio
+  // real, sin ningún desglose. _actualizarPrecioSinIsv queda como un simple
+  // alias de _actualizarPrecio (ver _precioCarritoConIsv, que ahora siempre
+  // es false) para no tener que tocar cada lugar que todavía lo llama.
+  Future<void> _actualizarPrecio(int index, double nuevoPrecio) async {
+    if (nuevoPrecio < 0) {
       _mostrarMensaje('Precio inválido');
       return;
     }
     final autorizado = await verificarAccesoEspecial(context, ref, PermisosEspeciales.ventasCambiarPrecio);
     if (!mounted) return;
     if (!autorizado) {
-      // Revierte el campo al precio actual (en la unidad que se esté
-      // mostrando): el usuario ya había escrito el nuevo valor en el
-      // TextField antes de que se pidiera la clave.
+      // Revierte el campo al precio actual: el usuario ya había escrito el
+      // nuevo valor en el TextField antes de que se pidiera la clave.
       final carrito = ref.read(carritoVentaProvider);
       if (index < carrito.items.length) {
-        final precioBase = carrito.items[index].precioVenta;
-        final valorMostrado = _precioCarritoConIsv ? redondearMoneda(precioBase * 1.15) : precioBase;
-        _ctrlPrecio[index]?.text = valorMostrado.toStringAsFixed(2);
+        _ctrlPrecio[index]?.text = carrito.items[index].precioVenta.toStringAsFixed(2);
       }
       return;
     }
-    ref.read(carritoVentaProvider.notifier).actualizarLinea(index, precioConIsv: nuevoPrecioConIsv);
+    ref.read(carritoVentaProvider.notifier).actualizarLinea(index, precioNuevo: nuevoPrecio);
   }
 
-  Future<void> _actualizarPrecioSinIsv(int index, double nuevoPrecioSinIsv) {
-    return _actualizarPrecio(index, redondearMoneda(nuevoPrecioSinIsv * 1.15));
-  }
-
-  void _alternarVistaPrecioCarrito(bool conIsv) {
-    final carrito = ref.read(carritoVentaProvider);
-    setState(() {
-      _precioCarritoConIsv = conIsv;
-      for (var i = 0; i < carrito.items.length; i++) {
-        final ctrl = _ctrlPrecio[i];
-        if (ctrl == null) continue;
-        final base = carrito.items[i].precioVenta;
-        final valor = conIsv ? redondearMoneda(base * 1.15) : base;
-        ctrl.text = valor.toStringAsFixed(2);
-      }
-    });
-  }
+  Future<void> _actualizarPrecioSinIsv(int index, double nuevoPrecio) => _actualizarPrecio(index, nuevoPrecio);
 
   void _actualizarDescuentoLinea(int index, double descuento) {
     if (descuento < 0 || descuento > 100) {
@@ -775,16 +777,9 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     ref.read(carritoVentaProvider.notifier).actualizarLinea(index, descuentoPorcentaje: descuento);
   }
 
-  double _subtotalConIsv(dynamic item) {
-    final precioConIsv = redondearMoneda(item.precioVenta * 1.15);
-    return redondearMoneda(precioConIsv * item.cantidad * (1 - item.descuentoPorcentaje / 100));
-  }
-
-  double _subtotalSinIsv(dynamic item) {
+  double _importeMostrado(dynamic item) {
     return redondearMoneda((item.precioVenta as double) * item.cantidad * (1 - item.descuentoPorcentaje / 100));
   }
-
-  double _importeMostrado(dynamic item) => _precioCarritoConIsv ? _subtotalConIsv(item) : _subtotalSinIsv(item);
 
   // ---------- Ventas en espera ----------
 
@@ -1793,12 +1788,6 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                   children: [
                     Text('Productos en la venta', style: GoogleFonts.poppins(fontSize: 14.5, fontWeight: FontWeight.w700)),
                     const SizedBox(width: 14),
-                    // En escritorio va acá, chico, en vez de en su propia
-                    // fila abajo: con varios productos en la venta, esa
-                    // fila de más le sacaba espacio vertical a la tabla,
-                    // que es lo que más se necesita ver.
-                    _selectorPrecioIsvCarrito(compacto: true),
-                    const SizedBox(width: 6),
                     IconButton(
                       tooltip: 'Ver la tabla más grande',
                       onPressed: _expandirTablaProductos,
@@ -1830,19 +1819,6 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                   ],
                 ),
           Offstage(offstage: true, child: _campoCodigoBarras()),
-          // En escritorio el selector de Con/Sin ISV ya va arriba, junto al
-          // título (ver más arriba): acá solo hace falta en móvil, donde no
-          // hay tanta presión de espacio vertical por la tabla.
-          if (esMovil) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Text('Precio unitario:', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600)),
-                const SizedBox(width: 10),
-                _selectorPrecioIsvCarrito(),
-              ],
-            ),
-          ],
           const SizedBox(height: 14),
           if (!esMovil) ...[
             _encabezadoTablaCarrito(),
@@ -1898,47 +1874,6 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     );
   }
 
-  // [alCambiarExtra] es para cuando este selector se muestra dentro de un
-  // diálogo aparte (ver _expandirTablaProductos): _alternarVistaPrecioCarrito
-  // ya actualiza el estado real con su propio setState, pero eso no alcanza
-  // para refrescar lo que ese diálogo ya dibujó, al ser una ruta aparte.
-  Widget _selectorPrecioIsvCarrito({bool compacto = false, VoidCallback? alCambiarExtra}) {
-    Widget opcion(String texto, bool valor) {
-      final activo = _precioCarritoConIsv == valor;
-      return InkWell(
-        onTap: () {
-          _alternarVistaPrecioCarrito(valor);
-          alCambiarExtra?.call();
-        },
-        borderRadius: BorderRadius.circular(9),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: EdgeInsets.symmetric(horizontal: compacto ? 8 : 12, vertical: compacto ? 5 : 8),
-          decoration: BoxDecoration(
-            color: activo ? const Color(0xFF0F1B3D) : Colors.transparent,
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Text(
-            texto,
-            style: GoogleFonts.poppins(fontSize: compacto ? 10.5 : 12, fontWeight: FontWeight.w600, color: activo ? Colors.white : const Color(0xFF666A72)),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(color: const Color(0xFFE8EAF0), borderRadius: BorderRadius.circular(11), border: Border.all(color: const Color(0xFFB6BCC7))),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          opcion('Con ISV', true),
-          opcion('Sin ISV', false),
-        ],
-      ),
-    );
-  }
-
   // Muestra la tabla de productos sola, casi a pantalla completa, para
   // cuando hay varios items y la vista normal se queda chica.
   //
@@ -1984,8 +1919,6 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                       children: [
                         Text('Productos en la venta', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w700)),
                         const SizedBox(width: 14),
-                        _selectorPrecioIsvCarrito(compacto: true, alCambiarExtra: () => setDialogState(() {})),
-                        const SizedBox(width: 10),
                         // Sigue funcionando igual que en la pantalla normal:
                         // abre el mismo buscador, y lo que se elija ahí se
                         // agrega al mismo carrito (se ve reflejado acá al
@@ -2067,10 +2000,12 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       decoration: BoxDecoration(color: const Color(0xFFF2F3F7), borderRadius: BorderRadius.circular(12)),
       child: Row(
         children: [
-          total('Subtotal', carrito.subtotal),
-          const SizedBox(width: 20),
-          total('ISV', carrito.impuesto),
-          const SizedBox(width: 20),
+          if (carrito.impuesto > 0) ...[
+            total('Subtotal', carrito.subtotal),
+            const SizedBox(width: 20),
+            total('ISV', carrito.impuesto),
+            const SizedBox(width: 20),
+          ],
           total('Total a pagar', carrito.totalAPagar, destacado: true),
           const Spacer(),
           SizedBox(
@@ -2095,9 +2030,9 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
         Expanded(flex: 2, child: Text('Código', style: estilo)),
         Expanded(flex: 4, child: Text('Descripción', style: estilo)),
         Expanded(flex: 2, child: Text('Cantidad', textAlign: TextAlign.center, style: estilo)),
-        Expanded(flex: 2, child: Text(_precioCarritoConIsv ? 'Precio (c/ISV)' : 'Precio (s/ISV)', textAlign: TextAlign.center, style: estilo)),
+        Expanded(flex: 2, child: Text('Precio', textAlign: TextAlign.center, style: estilo)),
         Expanded(flex: 2, child: Text('Descuento %', textAlign: TextAlign.center, style: estilo)),
-        Expanded(flex: 2, child: Text(_precioCarritoConIsv ? 'Importe (c/ISV)' : 'Importe (s/ISV)', textAlign: TextAlign.right, style: estilo)),
+        Expanded(flex: 2, child: Text('Importe', textAlign: TextAlign.right, style: estilo)),
         const SizedBox(width: 40),
       ],
     );
@@ -2467,7 +2402,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
             children: [
               Expanded(child: _campoInlineConEtiqueta('cantidad_$index', 'Cantidad', ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v))),
               const SizedBox(width: 8),
-              Expanded(child: _campoInlineConEtiqueta('precio_$index', _precioCarritoConIsv ? 'Precio (c/ISV)' : 'Precio (s/ISV)', ctrlPrecio, precioMostrado, (v) => _precioCarritoConIsv ? _actualizarPrecio(index, v) : _actualizarPrecioSinIsv(index, v), dosDecimales: true)),
+              Expanded(child: _campoInlineConEtiqueta('precio_$index', 'Precio', ctrlPrecio, precioMostrado, (v) => _precioCarritoConIsv ? _actualizarPrecio(index, v) : _actualizarPrecioSinIsv(index, v), dosDecimales: true)),
               const SizedBox(width: 8),
               Expanded(child: _campoInlineConEtiqueta('descuento_$index', 'Desc. %', ctrlDescuento, item.descuentoPorcentaje as double, (v) => _actualizarDescuentoLinea(index, v))),
             ],
@@ -2475,7 +2410,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
           const SizedBox(height: 10),
           Align(
             alignment: Alignment.centerRight,
-            child: Text('Importe (${_precioCarritoConIsv ? 'c/ISV' : 's/ISV'}): ${formatearMoneda(importe)}', style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w700)),
+            child: Text('Importe: ${formatearMoneda(importe)}', style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -2497,7 +2432,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
             runSpacing: 10,
             children: [
               _filaTotalTexto('Subtotal', carrito.subtotal),
-              _filaTotalTexto('ISV (15%)', carrito.impuesto),
+              if (carrito.impuesto > 0) _filaTotalTexto('ISV (15%)', carrito.impuesto),
               if (carrito.descuentoGlobalPorcentaje > 0) _filaTotalTextoPorcentaje('Descuento global', carrito.descuentoGlobalPorcentaje),
               if (!carrito.esCotizacion && carrito.condicion != 'Credito' && carrito.metodoPago == 'Efectivo' && carrito.pagoCon > 0) ...[
                 _filaTotalTexto('Paga con', carrito.pagoCon),

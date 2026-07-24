@@ -16,9 +16,15 @@ class VentaTicketEscPosService {
     final formatoFecha = DateFormat('dd/MM/yyyy HH:mm');
     final formatoDia = DateFormat('dd/MM/yyyy');
 
-    double precioMostrado(dynamic item) => negocio.facturaPreciosConIsv ? redondearMoneda((item.precioVenta as double) * 1.15) : item.precioVenta as double;
+    // Este negocio no cobra ISV salvo en documentos fiscales formales
+    // (Factura/Boleta): fuera de esos casos nunca se multiplica por 1.15 ni
+    // se muestran las leyendas fiscales, sin importar la preferencia de
+    // negocio.facturaPreciosConIsv.
+    final esFacturable = venta.tipoDocumento == 'Factura' || venta.tipoDocumento == 'Boleta';
+    final conIsv = esFacturable && negocio.facturaPreciosConIsv;
+    double precioMostrado(dynamic item) => conIsv ? redondearMoneda((item.precioVenta as double) * 1.15) : item.precioVenta as double;
     double importeMostrado(dynamic item) {
-      if (!negocio.facturaPreciosConIsv) return item.subtotal as double;
+      if (!conIsv) return item.subtotal as double;
       final precio = precioMostrado(item);
       return redondearMoneda(precio * (item.cantidad as double) * (1 - (item.descuentoPorcentaje as double) / 100));
     }
@@ -66,8 +72,10 @@ class VentaTicketEscPosService {
 
     bytes += _filaTotal(generador, 'SUBTOTAL:', venta.subtotal);
     if (venta.descuentoGlobal > 0) bytes += generador.text('Descuento global: ${_formatoCantidad(venta.descuentoGlobal)}%');
-    bytes += _filaTotal(generador, 'Gravado 15%:', venta.subtotal);
-    bytes += _filaTotal(generador, 'ISV 15%:', venta.impuesto);
+    if (esFacturable) {
+      bytes += _filaTotal(generador, 'Gravado 15%:', venta.subtotal);
+      bytes += _filaTotal(generador, 'ISV 15%:', venta.impuesto);
+    }
     bytes += _filaTotal(generador, 'TOTAL A PAGAR:', venta.totalAPagar, negrita: true);
     bytes += generador.hr();
 
@@ -84,15 +92,17 @@ class VentaTicketEscPosService {
     }
     bytes += generador.hr();
 
-    if (negocio.rangoPrefijo.isNotEmpty || negocio.rangoDesde.isNotEmpty) {
-      bytes += generador.text('Rango Aut.: ${negocio.rangoPrefijo}${negocio.rangoDesde} al ${negocio.rangoPrefijo}${negocio.rangoHasta}');
+    if (esFacturable) {
+      if (negocio.rangoPrefijo.isNotEmpty || negocio.rangoDesde.isNotEmpty) {
+        bytes += generador.text('Rango Aut.: ${negocio.rangoPrefijo}${negocio.rangoDesde} al ${negocio.rangoPrefijo}${negocio.rangoHasta}');
+      }
+      if (negocio.fechaLimiteEmision != null) {
+        bytes += generador.text('Fecha Límite: ${formatoDia.format(negocio.fechaLimiteEmision!)}');
+      }
+      bytes += generador.text('ORIGINAL: CLIENTE');
+      bytes += generador.text('COPIA: OBLIGADO TRIBUTARIO EMISOR');
+      bytes += generador.text('LA FACTURA ES BENEFICIO DE TODOS, ¡EXÍJALA!', styles: const PosStyles(align: PosAlign.center, bold: true));
     }
-    if (negocio.fechaLimiteEmision != null) {
-      bytes += generador.text('Fecha Límite: ${formatoDia.format(negocio.fechaLimiteEmision!)}');
-    }
-    bytes += generador.text('ORIGINAL: CLIENTE');
-    bytes += generador.text('COPIA: OBLIGADO TRIBUTARIO EMISOR');
-    bytes += generador.text('LA FACTURA ES BENEFICIO DE TODOS, ¡EXÍJALA!', styles: const PosStyles(align: PosAlign.center, bold: true));
     bytes += generador.text('¡GRACIAS POR SU COMPRA!', styles: const PosStyles(align: PosAlign.center, bold: true));
     bytes += generador.cut();
 

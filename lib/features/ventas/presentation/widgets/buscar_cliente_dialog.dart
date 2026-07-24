@@ -14,11 +14,31 @@ class BuscarClienteDialog extends ConsumerStatefulWidget {
 class _BuscarClienteDialogState extends ConsumerState<BuscarClienteDialog> {
   final _busquedaController = TextEditingController();
   String _busqueda = '';
+  bool _creando = false;
 
   @override
   void dispose() {
     _busquedaController.dispose();
     super.dispose();
+  }
+
+  // Igual que en el sistema viejo (agenda de citas, y también acá en
+  // ventas): si el cliente no existe todavía, se registra rápido con lo que
+  // ya se escribió en el buscador (solo nombre, sin tener que salir de esta
+  // pantalla a ir al módulo de Clientes).
+  Future<void> _crearClienteRapido() async {
+    final nombre = _busqueda.trim();
+    if (nombre.isEmpty) return;
+    setState(() => _creando = true);
+    try {
+      final creado = await ref.read(clienteRepositoryProvider).crearRapido(nombreCompleto: nombre);
+      if (mounted) Navigator.pop(context, creado);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _creando = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se pudo crear el cliente: $e')));
+      }
+    }
   }
 
   @override
@@ -83,12 +103,32 @@ class _BuscarClienteDialogState extends ConsumerState<BuscarClienteDialog> {
                     lista = lista.where((c) => coincideFuzzy(c.textoBusqueda, _busqueda)).toList();
                   }
                   if (lista.isEmpty) {
-                    return Center(child: Text('No se encontraron clientes', style: GoogleFonts.poppins(color: Colors.grey.shade500)));
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('No se encontraron clientes', style: GoogleFonts.poppins(color: Colors.grey.shade500)),
+                          if (_busqueda.isNotEmpty) ...[
+                            const SizedBox(height: 14),
+                            _botonCrearRapido(),
+                          ],
+                        ],
+                      ),
+                    );
                   }
                   return ListView.separated(
-                    itemCount: lista.length,
+                    itemCount: lista.length + (_busqueda.isNotEmpty ? 1 : 0),
                     separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
                     itemBuilder: (context, i) {
+                      if (i == lista.length) {
+                        // Igual que en el sistema viejo: aunque haya
+                        // coincidencias parecidas, siempre queda a mano crear
+                        // uno nuevo si en realidad es otra persona.
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: _botonCrearRapido(),
+                        );
+                      }
                       final c = lista[i];
                       return InkWell(
                         onTap: () => Navigator.pop(context, c),
@@ -112,6 +152,22 @@ class _BuscarClienteDialogState extends ConsumerState<BuscarClienteDialog> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _botonCrearRapido() {
+    return OutlinedButton.icon(
+      onPressed: _creando ? null : _crearClienteRapido,
+      icon: _creando
+          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+          : const Icon(Icons.person_add_alt_1_outlined, size: 18),
+      label: Text('Crear cliente "$_busqueda"', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: const Color(0xFF0F1B3D),
+        side: const BorderSide(color: Color(0xFF0F1B3D)),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }

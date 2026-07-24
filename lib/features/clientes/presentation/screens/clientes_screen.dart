@@ -5,6 +5,7 @@ import '../../data/cliente_model.dart';
 import '../../providers/clientes_provider.dart';
 import '../../../../core/utils/texto_utils.dart';
 import '../widgets/cliente_form_dialog.dart';
+import '../widgets/cliente_dashboard_dialog.dart';
 
 class ClientesScreen extends ConsumerStatefulWidget {
   const ClientesScreen({super.key});
@@ -116,6 +117,17 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
                         onPressed: () => ref.invalidate(clientesStreamProvider),
                         icon: const Icon(Icons.refresh, size: 18),
                         label: Text('Refrescar', style: GoogleFonts.poppins(fontSize: 13)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF1A1A1A),
+                          side: const BorderSide(color: Color(0xFFB6BCC7)),
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => showDialog(context: context, builder: (context) => const ClienteDashboardDialog()),
+                        icon: const Icon(Icons.insights_outlined, size: 18),
+                        label: Text('Panel', style: GoogleFonts.poppins(fontSize: 13)),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: const Color(0xFF1A1A1A),
                           side: const BorderSide(color: Color(0xFFB6BCC7)),

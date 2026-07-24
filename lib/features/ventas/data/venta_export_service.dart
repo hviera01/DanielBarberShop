@@ -23,7 +23,11 @@ class VentaExportService {
   /// el selector en Detalle de Venta); si no se manda, cae al valor por
   /// defecto del negocio, igual que hacía antes.
   Future<Uint8List> generarPdfDetalleVenta(VentaModel venta, NegocioModel negocio, {bool? preciosConIsv}) async {
-    final conIsv = preciosConIsv ?? negocio.facturaPreciosConIsv;
+    // Este negocio no cobra ISV salvo en documentos fiscales formales
+    // (Factura/Boleta): fuera de esos casos nunca se multiplica por 1.15,
+    // sin importar la preferencia de negocio.facturaPreciosConIsv.
+    final esFacturable = venta.tipoDocumento == 'Factura' || venta.tipoDocumento == 'Boleta';
+    final conIsv = esFacturable && (preciosConIsv ?? negocio.facturaPreciosConIsv);
     final doc = pw.Document();
     final logo = decodificarLogoPdf(negocio.logoColorBase64);
     final formatoDia = DateFormat('dd/MM/yyyy');
@@ -52,7 +56,7 @@ class VentaExportService {
                 children: [
                   pw.Expanded(child: _bloqueLetrasYPago(venta)),
                   pw.SizedBox(width: 16),
-                  _bloqueTotales(venta),
+                  _bloqueTotales(venta, esFacturable),
                 ],
               ),
               pw.Spacer(),
@@ -250,7 +254,7 @@ class VentaExportService {
     );
   }
 
-  pw.Widget _bloqueTotales(VentaModel venta) {
+  pw.Widget _bloqueTotales(VentaModel venta, bool esFacturable) {
     // Misma base sin ISV que ya usan Subtotal y Gravado 15%: precio de lista
     // (sin descuento) de cada línea menos lo que realmente quedó en
     // subtotal, así que cuadra con el resto del desglose.
@@ -267,11 +271,13 @@ class VentaExportService {
           _filaTotalFormal('Subtotal', formatearMoneda(venta.subtotal)),
           if (venta.descuentoGlobal > 0) _filaTotalFormal('Descuento global', '${_formatoCantidad(venta.descuentoGlobal)}%'),
           _filaTotalFormal('Descuentos y rebajas', formatearMoneda(descuentosYRebajas)),
-          _filaTotalFormal('Importe exento', formatearMoneda(0)),
-          _filaTotalFormal('Importe exonerado', formatearMoneda(0)),
-          _filaTotalFormal('Gravado 15%', formatearMoneda(venta.subtotal)),
-          _filaTotalFormal('Gravado 18%', formatearMoneda(0)),
-          _filaTotalFormal('ISV (15%)', formatearMoneda(venta.impuesto)),
+          if (esFacturable) ...[
+            _filaTotalFormal('Importe exento', formatearMoneda(0)),
+            _filaTotalFormal('Importe exonerado', formatearMoneda(0)),
+            _filaTotalFormal('Gravado 15%', formatearMoneda(venta.subtotal)),
+            _filaTotalFormal('Gravado 18%', formatearMoneda(0)),
+            _filaTotalFormal('ISV (15%)', formatearMoneda(venta.impuesto)),
+          ],
           pw.Divider(color: _colorBorde, height: 10),
           _filaTotalFormal('TOTAL', formatearMoneda(venta.totalAPagar), destacado: true),
         ],
@@ -374,13 +380,14 @@ class VentaExportService {
     const fNormal = 8.0;
     final alturaMm = _estimarAlturaTicketMm(venta, negocio, tieneLogo: logo != null);
 
-    // El total y el desglose de ISV siempre reflejan el monto real de la
-    // venta; esto solo cambia cómo se ve el precio unitario y el importe de
-    // cada línea (con o sin ISV incluido), según la configuración del
-    // negocio.
-    double precioMostrado(dynamic item) => negocio.facturaPreciosConIsv ? redondearMoneda((item.precioVenta as double) * 1.15) : item.precioVenta as double;
+    // Este negocio no cobra ISV salvo en documentos fiscales formales
+    // (Factura/Boleta). Fuera de esos casos nunca se multiplica por 1.15,
+    // sin importar la preferencia de negocio.facturaPreciosConIsv.
+    final esFacturable = venta.tipoDocumento == 'Factura' || venta.tipoDocumento == 'Boleta';
+    final conIsv = esFacturable && negocio.facturaPreciosConIsv;
+    double precioMostrado(dynamic item) => conIsv ? redondearMoneda((item.precioVenta as double) * 1.15) : item.precioVenta as double;
     double importeMostrado(dynamic item) {
-      if (!negocio.facturaPreciosConIsv) return item.subtotal as double;
+      if (!conIsv) return item.subtotal as double;
       final precio = precioMostrado(item);
       return redondearMoneda(precio * (item.cantidad as double) * (1 - (item.descuentoPorcentaje as double) / 100));
     }
@@ -480,11 +487,13 @@ class VentaExportService {
             _filaTotal('SUBTOTAL:', venta.subtotal),
             if (venta.descuentoGlobal > 0) pw.Text('Descuento global: ${_formatoCantidad(venta.descuentoGlobal)}%', style: const pw.TextStyle(fontSize: fSmall)),
             _filaTotal('Descuentos y rebajas:', descuentosYRebajas),
-            _filaTotal('Importe Exento:', 0),
-            _filaTotal('Importe Exonerado:', 0),
-            _filaTotal('Gravado 15%:', venta.subtotal),
-            _filaTotal('Gravado 18%:', 0),
-            _filaTotal('ISV 15%:', venta.impuesto),
+            if (esFacturable) ...[
+              _filaTotal('Importe Exento:', 0),
+              _filaTotal('Importe Exonerado:', 0),
+              _filaTotal('Gravado 15%:', venta.subtotal),
+              _filaTotal('Gravado 18%:', 0),
+              _filaTotal('ISV 15%:', venta.impuesto),
+            ],
             _filaTotal('TOTAL A PAGAR:', venta.totalAPagar, negrita: true),
             pw.SizedBox(height: 6),
             _separador(),
@@ -499,28 +508,31 @@ class VentaExportService {
                 pw.Text('Transferencia', style: const pw.TextStyle(fontSize: fNormal)),
             ],
             _separador(),
-            if (negocio.rangoPrefijo.isNotEmpty || negocio.rangoDesde.isNotEmpty)
-              pw.Text('Rango Aut.: ${negocio.rangoPrefijo}${negocio.rangoDesde} al ${negocio.rangoPrefijo}${negocio.rangoHasta}', style: const pw.TextStyle(fontSize: fSmall)),
-            if (negocio.fechaLimiteEmision != null)
-              pw.Text('Fecha Límite: ${formatoDia.format(negocio.fechaLimiteEmision!)}', style: const pw.TextStyle(fontSize: fSmall)),
-            pw.SizedBox(height: 4),
-            pw.Text('ORIGINAL: CLIENTE', style: const pw.TextStyle(fontSize: fSmall)),
-            pw.Text('COPIA: OBLIGADO TRIBUTARIO EMISOR', style: const pw.TextStyle(fontSize: fSmall)),
-            pw.SizedBox(height: 8),
-            pw.Center(
-              child: pw.Text(
-                'LA FACTURA ES BENEFICIO DE TODOS, ¡EXÍJALA!',
-                textAlign: pw.TextAlign.center,
-                style: const pw.TextStyle(fontSize: fSmall),
+            if (esFacturable) ...[
+              if (negocio.rangoPrefijo.isNotEmpty || negocio.rangoDesde.isNotEmpty)
+                pw.Text('Rango Aut.: ${negocio.rangoPrefijo}${negocio.rangoDesde} al ${negocio.rangoPrefijo}${negocio.rangoHasta}', style: const pw.TextStyle(fontSize: fSmall)),
+              if (negocio.fechaLimiteEmision != null)
+                pw.Text('Fecha Límite: ${formatoDia.format(negocio.fechaLimiteEmision!)}', style: const pw.TextStyle(fontSize: fSmall)),
+              pw.SizedBox(height: 4),
+              pw.Text('ORIGINAL: CLIENTE', style: const pw.TextStyle(fontSize: fSmall)),
+              pw.Text('COPIA: OBLIGADO TRIBUTARIO EMISOR', style: const pw.TextStyle(fontSize: fSmall)),
+              pw.SizedBox(height: 8),
+              pw.Center(
+                child: pw.Text(
+                  'LA FACTURA ES BENEFICIO DE TODOS, ¡EXÍJALA!',
+                  textAlign: pw.TextAlign.center,
+                  style: const pw.TextStyle(fontSize: fSmall),
+                ),
               ),
-            ),
-            pw.SizedBox(height: 6),
+              pw.SizedBox(height: 6),
+            ],
             pw.Text('¡GRACIAS POR SU COMPRA!', style: const pw.TextStyle(fontSize: fNormal)),
             pw.SizedBox(height: 10),
-            pw.Align(
-              alignment: pw.Alignment.centerRight,
-              child: pw.Text(esCopia ? 'COPIA' : 'ORIGINAL', style: const pw.TextStyle(fontSize: fNormal)),
-            ),
+            if (esFacturable)
+              pw.Align(
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text(esCopia ? 'COPIA' : 'ORIGINAL', style: const pw.TextStyle(fontSize: fNormal)),
+              ),
           ];
       },
     );

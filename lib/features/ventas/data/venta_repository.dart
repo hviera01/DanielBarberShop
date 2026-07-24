@@ -220,14 +220,16 @@ class VentaRepository {
 
       // Historial de precio de venta por producto: no aplica a cotizaciones,
       // que todavía no son una venta concretada.
+      final aplicaIsv = tipoDocumento == 'Factura' || tipoDocumento == 'Boleta';
       if (tipoDocumento != 'Cotizacion') {
         for (final item in items) {
           final ref = _db.collection('productos').doc(item.idProducto);
-          final precioConIsv = redondearMoneda(item.precioVenta * (1 - item.descuentoPorcentaje / 100) * 1.15);
+          final precioBase = item.precioVenta * (1 - item.descuentoPorcentaje / 100);
+          final precioFinal = redondearMoneda(aplicaIsv ? precioBase * 1.15 : precioBase);
           final historialVentaRef = ref.collection('historialVentas').doc();
           transaction.set(historialVentaRef, {
             'idVenta': ventaRef.id,
-            'precioVenta': precioConIsv,
+            'precioVenta': precioFinal,
             'precioUnitario': item.precioVenta,
             'descuentoPorcentaje': item.descuentoPorcentaje,
             'cantidad': item.cantidad,
