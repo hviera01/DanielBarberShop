@@ -183,11 +183,11 @@ class _AppShellState extends ConsumerState<AppShell> {
                         width: 36,
                         height: 36,
                         decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-                        child: ClipOval(
-                          child: Padding(
-                            padding: const EdgeInsets.all(3),
-                            child: Image.asset('assets/images/logo.jpg', fit: BoxFit.cover),
-                          ),
+                        // logo_redondo.png ya viene recortado en círculo con
+                        // transparencia real (ver login_screen.dart).
+                        child: Padding(
+                          padding: const EdgeInsets.all(3),
+                          child: Image.asset('assets/images/logo_redondo.png', fit: BoxFit.contain),
                         ),
                       ),
                       if (!esAngosto) ...[

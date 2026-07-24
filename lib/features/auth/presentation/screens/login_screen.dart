@@ -104,13 +104,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 ),
                               ],
                             ),
-                            child: ClipOval(
-                              child: Padding(
-                                padding: const EdgeInsets.all(6),
-                                child: Image.asset(
-                                  'assets/images/logo.jpg',
-                                  fit: BoxFit.cover,
-                                ),
+                            // logo_redondo.png ya viene recortado en círculo
+                            // (con transparencia real en las esquinas, ver
+                            // tool/generar_logo_redondo.dart): usarlo directo
+                            // en vez de recortar logo.jpg en vivo con
+                            // ClipOval evita que el cuadrado original se note
+                            // "encajado" a la fuerza en el marco redondo.
+                            child: Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: Image.asset(
+                                'assets/images/logo_redondo.png',
+                                fit: BoxFit.contain,
                               ),
                             ),
                           ),

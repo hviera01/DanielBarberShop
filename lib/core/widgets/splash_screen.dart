@@ -73,11 +73,11 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   color: Colors.white,
                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 30, offset: const Offset(0, 12))],
                 ),
-                child: ClipOval(
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Image.asset('assets/images/logo.jpg', fit: BoxFit.cover),
-                  ),
+                // logo_redondo.png ya viene recortado en círculo con
+                // transparencia real (ver login_screen.dart).
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Image.asset('assets/images/logo_redondo.png', fit: BoxFit.contain),
                 ),
               ),
               const SizedBox(height: 24),

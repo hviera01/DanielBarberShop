@@ -27,4 +27,12 @@ void main() {
   // recorte el texto.
   generar('Icon-maskable-192.png', 192);
   generar('Icon-maskable-512.png', 512);
+
+  // favicon.png (pestaña del navegador) vive suelto en web/, no en
+  // web/icons/ — si no, se queda con el ícono viejo aunque el resto ya esté
+  // actualizado.
+  final favicon = img.copyResizeCropSquare(original, size: 64);
+  File('web/favicon.png').writeAsBytesSync(img.encodePng(favicon));
+  // ignore: avoid_print
+  print('Listo: web/favicon.png');
 }
