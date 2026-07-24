@@ -47,14 +47,11 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
       final repo = ComisionRepository();
       final finInclusive = DateTime(_fin.year, _fin.month, _fin.day, 23, 59, 59);
       final inicioDelDia = DateTime(_inicio.year, _inicio.month, _inicio.day);
-      final resultados = await Future.wait([
-        repo.obtenerComisionCortes(inicioDelDia, finInclusive, idBarbero: _idBarberoFiltro),
-        repo.obtenerComisionProductos(inicioDelDia, finInclusive),
-      ]);
+      final resultado = await repo.obtenerComisionesDelPeriodo(inicioDelDia, finInclusive, idBarbero: _idBarberoFiltro);
       if (!mounted) return;
       setState(() {
-        _cortes = resultados[0] as List<ComisionCorteBarbero>;
-        _productos = resultados[1] as List<ComisionProductoVendedor>;
+        _cortes = resultado.cortes;
+        _productos = resultado.productos;
         _cargando = false;
       });
     } catch (e) {
