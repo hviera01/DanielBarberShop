@@ -97,6 +97,11 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   final _servicioTicketEscPos = VentaTicketEscPosService();
   final _servicioImpresoraRed = ImpresoraRedService();
   bool _guardando = false;
+  // En conexiones lentas (celular), _seleccionarBarbero/_seleccionarVendidoPor
+  // esperan una consulta a Firestore antes de abrir su diálogo; sin esta
+  // traba, varios toques mientras tanto disparaban varias llamadas en
+  // paralelo y terminaban abriendo el mismo diálogo apilado varias veces.
+  bool _abriendoSelectorPersona = false;
 
   // Campo de "escanear código de barras" directo en esta pantalla (sin
   // pasar por el modal de Buscar Producto): con autofocus permanente en
@@ -2269,90 +2274,119 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     );
   }
 
-  Future<void> _seleccionarBarbero(int index) async {
-    List<BarberoModel> barberos;
-    try {
-      barberos = await ref.read(barberosActivosProvider.future);
-    } catch (e) {
-      if (mounted) _mostrarMensaje('No se pudo cargar la lista de barberos: $e');
-      return;
-    }
-    if (!mounted) return;
-    final elegido = await showDialog<BarberoModel>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: Text('¿Quién atendió?', style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
-        children: barberos.isEmpty
-            ? [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Text('No hay barberos activos registrados', style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade600)),
-                ),
-              ]
-            : barberos
-                .map((b) => SimpleDialogOption(
-                      onPressed: () => Navigator.pop(context, b),
-                      child: Text('${b.nombreCompleto} (${b.porcentajeComision.toStringAsFixed(0)}%)', style: GoogleFonts.poppins(fontSize: 13.5)),
-                    ))
-                .toList(),
-      ),
+  // Título de los diálogos de selección con una X explícita para cerrar: en
+  // móvil no siempre es obvio que se puede tocar afuera para cancelar.
+  Widget _tituloDialogoConCierre(BuildContext context, String texto) {
+    return Row(
+      children: [
+        Expanded(child: Text(texto, style: GoogleFonts.poppins(fontWeight: FontWeight.w700))),
+        InkWell(
+          onTap: () => Navigator.pop(context),
+          borderRadius: BorderRadius.circular(20),
+          child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.close, size: 20)),
+        ),
+      ],
     );
-    if (elegido == null || !mounted) return;
-    ref.read(carritoVentaProvider.notifier).establecerBarberoLinea(
-          index,
-          idBarbero: elegido.id,
-          nombreBarbero: elegido.nombreCompleto,
-          pctComision: elegido.porcentajeComision,
-        );
+  }
+
+  Future<void> _seleccionarBarbero(int index) async {
+    if (_abriendoSelectorPersona) return;
+    _abriendoSelectorPersona = true;
+    try {
+      List<BarberoModel> barberos;
+      try {
+        barberos = await ref.read(barberosActivosProvider.future);
+      } catch (e) {
+        if (mounted) _mostrarMensaje('No se pudo cargar la lista de barberos: $e');
+        return;
+      }
+      if (!mounted) return;
+      final elegido = await showDialog<BarberoModel>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: _tituloDialogoConCierre(context, '¿Quién atendió?'),
+          children: barberos.isEmpty
+              ? [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Text('No hay barberos activos registrados', style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade600)),
+                  ),
+                ]
+              : barberos
+                  .map((b) => SimpleDialogOption(
+                        onPressed: () => Navigator.pop(context, b),
+                        child: Text('${b.nombreCompleto} (${b.porcentajeComision.toStringAsFixed(0)}%)', style: GoogleFonts.poppins(fontSize: 13.5)),
+                      ))
+                  .toList(),
+        ),
+      );
+      if (elegido == null || !mounted) return;
+      ref.read(carritoVentaProvider.notifier).establecerBarberoLinea(
+            index,
+            idBarbero: elegido.id,
+            nombreBarbero: elegido.nombreCompleto,
+            pctComision: elegido.porcentajeComision,
+          );
+    } finally {
+      _abriendoSelectorPersona = false;
+    }
   }
 
   Future<void> _seleccionarVendidoPor(int index) async {
-    List<BarberoModel> barberos;
+    if (_abriendoSelectorPersona) return;
+    _abriendoSelectorPersona = true;
     try {
-      barberos = await ref.read(barberosActivosProvider.future);
-    } catch (e) {
-      if (mounted) _mostrarMensaje('No se pudo cargar la lista de barberos: $e');
-      return;
+      List<BarberoModel> barberos;
+      try {
+        barberos = await ref.read(barberosActivosProvider.future);
+      } catch (e) {
+        if (mounted) _mostrarMensaje('No se pudo cargar la lista de barberos: $e');
+        return;
+      }
+      final usuarios = (ref.read(usuariosStreamProvider).value ?? []).where((u) => u.estado).toList();
+      if (!mounted) return;
+      final resultado = await showDialog<(String, String, String)>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: _tituloDialogoConCierre(context, '¿Quién vendió este producto?'),
+          children: [
+            // "N/A" siempre primero y bien visible: es la forma de volver a
+            // dejar la línea sin vendedor asignado si el cajero se equivocó.
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, ('N/A', '', '')),
+              child: Text('N/A (nadie en particular)', style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w600)),
+            ),
+            if (usuarios.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+                child: Text('Usuarios', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.w700)),
+              ),
+            ...usuarios.map((u) => SimpleDialogOption(
+                  onPressed: () => Navigator.pop(context, ('Usuario', u.id, u.nombreCompleto)),
+                  child: Text(u.nombreCompleto, style: GoogleFonts.poppins(fontSize: 13.5)),
+                )),
+            if (barberos.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+                child: Text('Barberos', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.w700)),
+              ),
+            ...barberos.map((b) => SimpleDialogOption(
+                  onPressed: () => Navigator.pop(context, ('Barbero', b.id, b.nombreCompleto)),
+                  child: Text(b.nombreCompleto, style: GoogleFonts.poppins(fontSize: 13.5)),
+                )),
+          ],
+        ),
+      );
+      if (resultado == null || !mounted) return;
+      ref.read(carritoVentaProvider.notifier).establecerVendidoPorLinea(
+            index,
+            tipo: resultado.$1,
+            id: resultado.$2,
+            nombre: resultado.$3,
+          );
+    } finally {
+      _abriendoSelectorPersona = false;
     }
-    final usuarios = (ref.read(usuariosStreamProvider).value ?? []).where((u) => u.estado).toList();
-    if (!mounted) return;
-    final resultado = await showDialog<(String, String, String)>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: Text('¿Quién vendió este producto?', style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, ('N/A', '', '')),
-            child: Text('N/A', style: GoogleFonts.poppins(fontSize: 13.5)),
-          ),
-          if (usuarios.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-              child: Text('Usuarios', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.w700)),
-            ),
-          ...usuarios.map((u) => SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, ('Usuario', u.id, u.nombreCompleto)),
-                child: Text(u.nombreCompleto, style: GoogleFonts.poppins(fontSize: 13.5)),
-              )),
-          if (barberos.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-              child: Text('Barberos', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.w700)),
-            ),
-          ...barberos.map((b) => SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, ('Barbero', b.id, b.nombreCompleto)),
-                child: Text(b.nombreCompleto, style: GoogleFonts.poppins(fontSize: 13.5)),
-              )),
-        ],
-      ),
-    );
-    if (resultado == null || !mounted) return;
-    ref.read(carritoVentaProvider.notifier).establecerVendidoPorLinea(
-          index,
-          tipo: resultado.$1,
-          id: resultado.$2,
-          nombre: resultado.$3,
-        );
   }
 
   Widget _filaCarritoTabla(int index, dynamic item, Map<String, ProductoModel> mapaProductos) {

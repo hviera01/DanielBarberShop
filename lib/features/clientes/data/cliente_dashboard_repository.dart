@@ -1,6 +1,7 @@
 import '../../reportes/data/reporte_repository.dart';
 import '../../reportes/data/reporte_venta_model.dart';
 
+const diasSemanaCortos = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const _diasSemana = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 
 class ClienteFrecuente {
@@ -34,8 +35,26 @@ class ClienteDashboardData {
   final List<ClienteInactivo> inactivos;
   final List<PatronVisita> patrones;
   final List<String> recordatorios;
+  // Visitas de TODO el negocio agrupadas por día de la semana (índice
+  // 0=domingo..6=sábado, ver diasSemanaCortos): a diferencia de "patrones"
+  // (el día favorito de cada cliente puntual), esto es la vista agregada de
+  // qué días vienen más clientes en general — la que de verdad conviene
+  // graficar.
+  final List<int> visitasPorDiaSemana;
+  final int totalClientesUnicos;
+  final int totalVisitas;
 
-  ClienteDashboardData({required this.frecuentes, required this.inactivos, required this.patrones, required this.recordatorios});
+  ClienteDashboardData({
+    required this.frecuentes,
+    required this.inactivos,
+    required this.patrones,
+    required this.recordatorios,
+    required this.visitasPorDiaSemana,
+    required this.totalClientesUnicos,
+    required this.totalVisitas,
+  });
+
+  double get promedioVisitasPorCliente => totalClientesUnicos == 0 ? 0 : totalVisitas / totalClientesUnicos;
 }
 
 /// Réplica del "Dashboard BI" del sistema viejo (modal dentro de la pantalla
@@ -45,13 +64,19 @@ class ClienteDashboardData {
 class ClienteDashboardRepository {
   final _reporteRepository = ReporteRepository();
 
+  bool _esClienteIdentificable(ReporteVentaModel v) {
+    final nombre = v.nombreCliente.trim().toUpperCase();
+    // "Consumidor final" (o vacío) no es un cliente real identificable: no
+    // tiene sentido que aparezca en un ranking de "quién viene más" ni en
+    // recordatorios personalizados.
+    return nombre.isNotEmpty && nombre != 'CONSUMIDOR FINAL';
+  }
+
   String _clave(ReporteVentaModel v) {
     final doc = v.documentoCliente.trim();
     final nombre = v.nombreCliente.trim();
-    return '${doc.isEmpty ? 'NO-DOC' : doc}|${nombre.isEmpty ? 'SIN NOMBRE' : nombre}';
+    return '${doc.isEmpty ? 'NO-DOC' : doc}|$nombre';
   }
-
-  String _nombreVisible(ReporteVentaModel v) => v.nombreCliente.trim().isEmpty ? 'SIN NOMBRE' : v.nombreCliente.trim();
 
   Future<ClienteDashboardData> obtenerDashboard({
     int mesesHistorial = 12,
@@ -65,8 +90,14 @@ class ClienteDashboardRepository {
     final ventas = await _reporteRepository.obtenerReporteVentas(inicio, fin);
     final activas = ventas.where((v) => v.esActiva && !v.esCotizacion && v.fechaRegistro != null).toList();
 
-    final porCliente = <String, List<ReporteVentaModel>>{};
+    final visitasPorDiaSemana = List<int>.filled(7, 0);
     for (final v in activas) {
+      visitasPorDiaSemana[v.fechaRegistro!.weekday % 7]++;
+    }
+
+    final identificables = activas.where(_esClienteIdentificable).toList();
+    final porCliente = <String, List<ReporteVentaModel>>{};
+    for (final v in identificables) {
       porCliente.putIfAbsent(_clave(v), () => []).add(v);
     }
 
@@ -74,7 +105,7 @@ class ClienteDashboardRepository {
       final ventasCliente = e.value;
       final fechas = ventasCliente.map((v) => v.fechaRegistro!).toList()..sort();
       return ClienteFrecuente(
-        nombre: _nombreVisible(ventasCliente.first),
+        nombre: ventasCliente.first.nombreCliente.trim(),
         visitas: ventasCliente.length,
         primeraVisita: fechas.first,
         ultimaVisita: fechas.last,
@@ -87,7 +118,7 @@ class ClienteDashboardRepository {
           final ventasCliente = e.value;
           final ultimaVisita = ventasCliente.map((v) => v.fechaRegistro!).reduce((a, b) => a.isAfter(b) ? a : b);
           return ClienteInactivo(
-            nombre: _nombreVisible(ventasCliente.first),
+            nombre: ventasCliente.first.nombreCliente.trim(),
             visitasTotal: ventasCliente.length,
             ultimaVisita: ultimaVisita,
             diasSinVisitar: DateTime.now().difference(ultimaVisita).inDays,
@@ -107,7 +138,7 @@ class ClienteDashboardRepository {
             porDia[dia] = (porDia[dia] ?? 0) + 1;
           }
           final diaTop = porDia.entries.reduce((a, b) => a.value >= b.value ? a : b);
-          return PatronVisita(nombre: _nombreVisible(ventasCliente.first), diaMasFrecuente: _diasSemana[diaTop.key], totalVisitas: ventasCliente.length);
+          return PatronVisita(nombre: ventasCliente.first.nombreCliente.trim(), diaMasFrecuente: _diasSemana[diaTop.key], totalVisitas: ventasCliente.length);
         })
         .whereType<PatronVisita>()
         .toList()
@@ -123,6 +154,9 @@ class ClienteDashboardRepository {
       inactivos: inactivos,
       patrones: patrones,
       recordatorios: recordatorios,
+      visitasPorDiaSemana: visitasPorDiaSemana,
+      totalClientesUnicos: porCliente.length,
+      totalVisitas: identificables.length,
     );
   }
 }

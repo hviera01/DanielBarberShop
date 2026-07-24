@@ -66,6 +66,10 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
     }
   }
 
+  // No dispara la búsqueda sola al elegir la fecha: hay que tocar "Buscar"
+  // explícito (más predecible, sobre todo en celular con internet lento,
+  // donde un cambio de fecha que dispara la consulta sola se puede sentir
+  // como que "no pasó nada" si tarda).
   Future<void> _elegirFecha(bool esInicio) async {
     final elegida = await showDatePicker(
       context: context,
@@ -81,7 +85,6 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
         _fin = elegida;
       }
     });
-    _cargar();
   }
 
   @override
@@ -90,14 +93,16 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
       color: const Color(0xFFF2F3F7),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final esMovil = constraints.maxWidth < 800;
+          final esMovil = constraints.maxWidth < 700;
           return Padding(
             padding: EdgeInsets.all(esMovil ? 14 : 26),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Comisiones', style: GoogleFonts.poppins(fontSize: esMovil ? 19 : 22, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
-                const SizedBox(height: 16),
+                const SizedBox(height: 4),
+                Text('Elegí el rango de fechas y tocá Buscar', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600)),
+                const SizedBox(height: 14),
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
@@ -105,15 +110,19 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
                     SizedBox(width: esMovil ? constraints.maxWidth : 150, child: _campoFecha('Desde', _inicio, () => _elegirFecha(true))),
                     SizedBox(width: esMovil ? constraints.maxWidth : 150, child: _campoFecha('Hasta', _fin, () => _elegirFecha(false))),
                     SizedBox(width: esMovil ? constraints.maxWidth : 200, child: _selectorBarbero()),
-                    OutlinedButton.icon(
-                      onPressed: _cargando ? null : _cargar,
-                      icon: const Icon(Icons.refresh, size: 18),
-                      label: Text('Actualizar', style: GoogleFonts.poppins(fontSize: 13)),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF1A1A1A),
-                        side: const BorderSide(color: Color(0xFFB6BCC7)),
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    SizedBox(
+                      width: esMovil ? constraints.maxWidth : null,
+                      child: FilledButton.icon(
+                        onPressed: _cargando ? null : _cargar,
+                        icon: _cargando
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.search, size: 18),
+                        label: Text('Buscar', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F1B3D),
+                          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
                       ),
                     ),
                   ],
@@ -123,14 +132,16 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
                   decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFAEB4C0))),
                   child: TabBar(
                     controller: _tabController,
+                    isScrollable: esMovil,
+                    tabAlignment: esMovil ? TabAlignment.start : null,
                     labelColor: const Color(0xFF0F1B3D),
                     unselectedLabelColor: Colors.grey.shade600,
                     indicatorColor: const Color(0xFF0F1B3D),
                     labelStyle: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
-                    tabs: const [
-                      Tab(text: 'Cortes por barbero'),
-                      Tab(text: 'Productos por vendedor'),
-                      Tab(text: 'Global'),
+                    tabs: [
+                      Tab(text: esMovil ? 'Cortes' : 'Cortes por barbero'),
+                      Tab(text: esMovil ? 'Productos' : 'Productos por vendedor'),
+                      const Tab(text: 'Global'),
                     ],
                   ),
                 ),
@@ -200,6 +211,9 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
             const DropdownMenuItem<String?>(value: null, child: Text('Todos los barberos')),
             ...(barberosAsync.value ?? []).map((b) => DropdownMenuItem<String?>(value: b.id, child: Text(b.nombreCompleto))),
           ],
+          // El cambio de barbero sí actualiza al toque: es un filtro simple
+          // (no una fecha que pida un diálogo aparte), no hace falta pasar
+          // por el botón Buscar para sentirse responsivo.
           onChanged: (v) {
             setState(() => _idBarberoFiltro = v);
             _cargar();
@@ -229,7 +243,7 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
   Widget _celda(String texto, int flex, {FontWeight peso = FontWeight.w400, bool gris = false}) {
     return Expanded(
       flex: flex,
-      child: Text(texto, style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: peso, color: gris ? Colors.grey.shade600 : const Color(0xFF1A1A1A))),
+      child: Text(texto, style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: peso, color: gris ? Colors.grey.shade600 : const Color(0xFF1A1A1A)), overflow: TextOverflow.ellipsis),
     );
   }
 
@@ -240,7 +254,10 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
         children: [
           Icon(Icons.paid_outlined, size: 56, color: Colors.grey.shade300),
           const SizedBox(height: 12),
-          Text(mensaje, style: GoogleFonts.poppins(color: Colors.grey.shade500)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(mensaje, style: GoogleFonts.poppins(color: Colors.grey.shade500), textAlign: TextAlign.center),
+          ),
         ],
       ),
     );
@@ -265,6 +282,36 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
     );
   }
 
+  // ---------- Tarjetas para móvil (una card por persona, en vez de una
+  // fila de tabla angosta con 4-5 columnas apretadas) ----------
+
+  Widget _tarjetaPersona({required String titulo, required List<(String, String)> filas, required String comision}) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: const Color(0xFFF8F9FB), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFE0E2E8))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(titulo, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 14,
+            runSpacing: 4,
+            children: filas
+                .map((f) => Text.rich(TextSpan(children: [
+                      TextSpan(text: '${f.$1}: ', style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade500)),
+                      TextSpan(text: f.$2, style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
+                    ])))
+                .toList(),
+          ),
+          const SizedBox(height: 6),
+          Text('Comisión: $comision', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF0F1B3D))),
+        ],
+      ),
+    );
+  }
+
   Widget _vistaCortes(bool esMovil) {
     final lista = _cortes ?? [];
     if (lista.isEmpty) return _vacio('No hay comisiones de cortes en este periodo');
@@ -273,26 +320,39 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
     final totalComision = lista.fold<double>(0, (s, c) => s + c.comisionTotal);
     return Column(
       children: [
-        _encabezado(['BARBERO', 'CORTES', 'MONTO', 'COMISIÓN'], [3, 2, 2, 2]),
+        if (!esMovil) _encabezado(['BARBERO', 'CORTES', 'MONTO', 'COMISIÓN'], [3, 2, 2, 2]),
         Expanded(
-          child: ListView.separated(
-            itemCount: lista.length,
-            separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
-            itemBuilder: (context, i) {
-              final c = lista[i];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  children: [
-                    _celda(c.nombreBarbero.isEmpty ? '-' : c.nombreBarbero, 3, peso: FontWeight.w600),
-                    _celda(c.cantidadCortes.toStringAsFixed(0), 2, gris: true),
-                    _celda(formatearMoneda(c.montoTotal), 2, gris: true),
-                    _celda(formatearMoneda(c.comisionTotal), 2, peso: FontWeight.w700),
-                  ],
+          child: esMovil
+              ? ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: lista.length,
+                  itemBuilder: (context, i) {
+                    final c = lista[i];
+                    return _tarjetaPersona(
+                      titulo: c.nombreBarbero.isEmpty ? '-' : c.nombreBarbero,
+                      filas: [('Cortes', c.cantidadCortes.toStringAsFixed(0)), ('Monto', formatearMoneda(c.montoTotal))],
+                      comision: formatearMoneda(c.comisionTotal),
+                    );
+                  },
+                )
+              : ListView.separated(
+                  itemCount: lista.length,
+                  separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
+                  itemBuilder: (context, i) {
+                    final c = lista[i];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Row(
+                        children: [
+                          _celda(c.nombreBarbero.isEmpty ? '-' : c.nombreBarbero, 3, peso: FontWeight.w600),
+                          _celda(c.cantidadCortes.toStringAsFixed(0), 2, gris: true),
+                          _celda(formatearMoneda(c.montoTotal), 2, gris: true),
+                          _celda(formatearMoneda(c.comisionTotal), 2, peso: FontWeight.w700),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
         _totales([('Total cortes', totalCortes.toStringAsFixed(0)), ('Total monto', formatearMoneda(totalMonto)), ('Total comisión', formatearMoneda(totalComision))]),
       ],
@@ -307,27 +367,40 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
     final totalComision = lista.fold<double>(0, (s, c) => s + c.comisionTotal);
     return Column(
       children: [
-        _encabezado(['VENDEDOR', 'PRODUCTOS', 'MONTO', 'TASA', 'COMISIÓN'], [3, 2, 2, 1, 2]),
+        if (!esMovil) _encabezado(['VENDEDOR', 'PRODUCTOS', 'MONTO', 'TASA', 'COMISIÓN'], [3, 2, 2, 1, 2]),
         Expanded(
-          child: ListView.separated(
-            itemCount: lista.length,
-            separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
-            itemBuilder: (context, i) {
-              final c = lista[i];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  children: [
-                    _celda('${c.nombre} (${c.tipo})', 3, peso: FontWeight.w600),
-                    _celda(c.cantidadProductos.toStringAsFixed(0), 2, gris: true),
-                    _celda(formatearMoneda(c.montoTotal), 2, gris: true),
-                    _celda('${(c.tasa * 100).toStringAsFixed(0)}%', 1, gris: true),
-                    _celda(formatearMoneda(c.comisionTotal), 2, peso: FontWeight.w700),
-                  ],
+          child: esMovil
+              ? ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: lista.length,
+                  itemBuilder: (context, i) {
+                    final c = lista[i];
+                    return _tarjetaPersona(
+                      titulo: '${c.nombre} (${c.tipo})',
+                      filas: [('Productos', c.cantidadProductos.toStringAsFixed(0)), ('Monto', formatearMoneda(c.montoTotal)), ('Tasa', '${(c.tasa * 100).toStringAsFixed(0)}%')],
+                      comision: formatearMoneda(c.comisionTotal),
+                    );
+                  },
+                )
+              : ListView.separated(
+                  itemCount: lista.length,
+                  separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
+                  itemBuilder: (context, i) {
+                    final c = lista[i];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Row(
+                        children: [
+                          _celda('${c.nombre} (${c.tipo})', 3, peso: FontWeight.w600),
+                          _celda(c.cantidadProductos.toStringAsFixed(0), 2, gris: true),
+                          _celda(formatearMoneda(c.montoTotal), 2, gris: true),
+                          _celda('${(c.tasa * 100).toStringAsFixed(0)}%', 1, gris: true),
+                          _celda(formatearMoneda(c.comisionTotal), 2, peso: FontWeight.w700),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
         _totales([('Total productos', totalProductos.toStringAsFixed(0)), ('Total monto', formatearMoneda(totalMonto)), ('Total comisión', formatearMoneda(totalComision))]),
       ],
@@ -339,6 +412,30 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
     final productos = _productos ?? [];
     if (cortes.isEmpty && productos.isEmpty) return _vacio('No hay comisiones en este periodo');
     final totalComision = cortes.fold<double>(0, (s, c) => s + c.comisionTotal) + productos.fold<double>(0, (s, c) => s + c.comisionTotal);
+    if (esMovil) {
+      return Column(
+        children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              children: [
+                ...cortes.map((c) => _tarjetaPersona(
+                      titulo: '✂️ ${c.nombreBarbero.isEmpty ? '-' : c.nombreBarbero}',
+                      filas: [('Cortes', c.cantidadCortes.toStringAsFixed(0)), ('Monto', formatearMoneda(c.montoTotal))],
+                      comision: formatearMoneda(c.comisionTotal),
+                    )),
+                ...productos.map((c) => _tarjetaPersona(
+                      titulo: '🛒 ${c.nombre} (${c.tipo})',
+                      filas: [('Productos', c.cantidadProductos.toStringAsFixed(0)), ('Monto', formatearMoneda(c.montoTotal))],
+                      comision: formatearMoneda(c.comisionTotal),
+                    )),
+              ],
+            ),
+          ),
+          _totales([('Total a pagar en comisiones', formatearMoneda(totalComision))]),
+        ],
+      );
+    }
     return Column(
       children: [
         _encabezado(['TIPO', 'PERSONA', 'CANTIDAD', 'MONTO', 'COMISIÓN'], [1, 3, 2, 2, 2]),
