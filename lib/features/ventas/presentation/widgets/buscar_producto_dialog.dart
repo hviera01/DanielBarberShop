@@ -157,12 +157,14 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
     });
     if (texto.isEmpty) return;
     final coincidencias = productos.where((p) => p.estado && _coincide(p, texto)).toList();
-    // Un código escaneado (exacta) con un solo resultado se agrega directo
-    // en cualquier plataforma, para que escanear siga siendo instantáneo.
-    // Una búsqueda por escrito con un solo resultado también se agregaba
-    // directo antes, pero en escritorio eso no dejaba ver la existencia
-    // disponible antes de decidir: ahí ahora solo se muestra en la lista.
-    if (coincidencias.length == 1 && (exacta || _esPlataformaMovil)) {
+    // Solo un código escaneado (exacta) con un solo resultado se agrega
+    // directo, para que escanear siga siendo instantáneo -es una acción
+    // deliberada, el código identifica un producto puntual sin ambigüedad.
+    // Una búsqueda por texto que da la casualidad de dejar un solo
+    // resultado YA NO se agrega sola (ni en celular): agregar sin que el
+    // usuario confirme a propósito, sobre todo mientras todavía está
+    // escribiendo, podía agregar el producto equivocado.
+    if (coincidencias.length == 1 && exacta) {
       _confirmarSeleccion(coincidencias.first);
     }
   }

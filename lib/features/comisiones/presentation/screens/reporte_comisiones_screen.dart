@@ -87,6 +87,53 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
     });
   }
 
+  // Vista de la tabla/tarjetas a pantalla completa, para cuando hay muchos
+  // resultados y el espacio normal (compartido con los filtros y el
+  // TabBar) se queda chico en el celular.
+  void _expandirVista() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog.fullscreen(
+        backgroundColor: const Color(0xFFF2F3F7),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                color: const Color(0xFF0F1B3D),
+                child: Row(
+                  children: [
+                    Expanded(child: Text('Comisiones', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white))),
+                    IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
+                  ],
+                ),
+              ),
+              Container(
+                color: Colors.white,
+                child: TabBar(
+                  controller: _tabController,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  labelColor: const Color(0xFF0F1B3D),
+                  unselectedLabelColor: Colors.grey.shade600,
+                  indicatorColor: const Color(0xFF0F1B3D),
+                  labelStyle: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
+                  tabs: const [Tab(text: 'Cortes'), Tab(text: 'Productos'), Tab(text: 'Global')],
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [_vistaCortes(true), _vistaProductos(true), _vistaGlobal(true)],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -99,7 +146,19 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Comisiones', style: GoogleFonts.poppins(fontSize: esMovil ? 19 : 22, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
+                Row(
+                  children: [
+                    Text('Comisiones', style: GoogleFonts.poppins(fontSize: esMovil ? 19 : 22, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
+                    if (esMovil) ...[
+                      const Spacer(),
+                      IconButton(
+                        tooltip: 'Ver la tabla más grande',
+                        onPressed: _expandirVista,
+                        icon: const Icon(Icons.open_in_full, size: 20, color: Color(0xFF0F1B3D)),
+                      ),
+                    ],
+                  ],
+                ),
                 const SizedBox(height: 4),
                 Text('Elegí el rango de fechas y tocá Buscar', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600)),
                 const SizedBox(height: 14),

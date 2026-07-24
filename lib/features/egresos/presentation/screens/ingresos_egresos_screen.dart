@@ -250,7 +250,7 @@ class _IngresosEgresosScreenState extends ConsumerState<IngresosEgresosScreen> {
                         const SizedBox(height: 12),
                         _totalesFila(totales, esMovil),
                         const SizedBox(height: 12),
-                        SizedBox(height: 420, child: _lista(lista)),
+                        _lista(lista, esMovil: true),
                       ],
                     ),
                   )
@@ -421,7 +421,7 @@ class _IngresosEgresosScreenState extends ConsumerState<IngresosEgresosScreen> {
     );
   }
 
-  Widget _lista(List<MovimientoFinanciero> lista) {
+  Widget _lista(List<MovimientoFinanciero> lista, {bool esMovil = false}) {
     if (_cargando) return const Center(child: CircularProgressIndicator(color: Color(0xFF0F1B3D)));
     if (lista.isEmpty) {
       return Center(
@@ -435,6 +435,7 @@ class _IngresosEgresosScreenState extends ConsumerState<IngresosEgresosScreen> {
         ),
       );
     }
+    if (esMovil) return _listaTarjetas(lista);
     final formatoFecha = DateFormat('dd/MM/yyyy HH:mm');
     return Container(
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFC7CBD3))),
@@ -464,6 +465,68 @@ class _IngresosEgresosScreenState extends ConsumerState<IngresosEgresosScreen> {
           );
         },
       ),
+    );
+  }
+
+  // En celular, 6 columnas apretadas en una fila quedan ilegibles: una
+  // tarjeta por movimiento aprovecha mejor el ancho angosto. Sin scroll
+  // propio (shrinkWrap + NeverScrollableScrollPhysics): esta lista vive
+  // dentro del SingleChildScrollView de toda la pantalla, no adentro de un
+  // Expanded, así que scrollea junto con el resto en vez de quedar atrapada
+  // en una altura fija.
+  Widget _listaTarjetas(List<MovimientoFinanciero> lista) {
+    final formatoFecha = DateFormat('dd/MM/yyyy HH:mm');
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: lista.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final m = lista[index];
+        final seleccionado = m.esEgresoManual && m.idEgreso == _idEditando;
+        return InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _seleccionarMovimiento(m),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: seleccionado ? const Color(0xFFE6E9F2) : Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: seleccionado ? const Color(0xFF0F1B3D) : const Color(0xFFC7CBD3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: Text(m.tipoMovimiento, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700))),
+                    Text(formatoFecha.format(m.fecha), style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(m.descripcion, style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade700)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    if (m.ingreso != 0) ...[
+                      Icon(Icons.arrow_downward, size: 13, color: const Color(0xFF16A34A)),
+                      const SizedBox(width: 3),
+                      Text(formatearMoneda(m.ingreso), style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF16A34A), fontWeight: FontWeight.w700)),
+                    ],
+                    if (m.egreso != 0) ...[
+                      Icon(Icons.arrow_upward, size: 13, color: const Color(0xFF0F1B3D)),
+                      const SizedBox(width: 3),
+                      Text(formatearMoneda(m.egreso), style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF0F1B3D), fontWeight: FontWeight.w700)),
+                    ],
+                    const Spacer(),
+                    Text(m.metodoPago, style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade600)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
