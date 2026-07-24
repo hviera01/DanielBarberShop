@@ -2254,9 +2254,16 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
         margin: const EdgeInsets.only(top: 4),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(color: const Color(0xFFE8EAF0), borderRadius: BorderRadius.circular(8)),
-        child: Text(
-          tipo == 'N/A' ? 'Vendido por: N/A' : 'Vendido por: $nombre',
-          style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.grey.shade700),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              tipo == 'N/A' ? 'Vendido por: N/A' : 'Vendido por: $nombre',
+              style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.grey.shade700),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.edit_outlined, size: 11, color: Colors.grey.shade500),
+          ],
         ),
       ),
     );
