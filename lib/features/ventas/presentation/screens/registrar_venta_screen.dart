@@ -2270,7 +2270,13 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   }
 
   Future<void> _seleccionarBarbero(int index) async {
-    final barberos = await ref.read(barberosActivosProvider.future);
+    List<BarberoModel> barberos;
+    try {
+      barberos = await ref.read(barberosActivosProvider.future);
+    } catch (e) {
+      if (mounted) _mostrarMensaje('No se pudo cargar la lista de barberos: $e');
+      return;
+    }
     if (!mounted) return;
     final elegido = await showDialog<BarberoModel>(
       context: context,
@@ -2301,7 +2307,13 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   }
 
   Future<void> _seleccionarVendidoPor(int index) async {
-    final barberos = await ref.read(barberosActivosProvider.future);
+    List<BarberoModel> barberos;
+    try {
+      barberos = await ref.read(barberosActivosProvider.future);
+    } catch (e) {
+      if (mounted) _mostrarMensaje('No se pudo cargar la lista de barberos: $e');
+      return;
+    }
     final usuarios = (ref.read(usuariosStreamProvider).value ?? []).where((u) => u.estado).toList();
     if (!mounted) return;
     final resultado = await showDialog<(String, String, String)>(

@@ -10,9 +10,18 @@ class BarberoRepository {
     });
   }
 
+  // Sin orderBy en la consulta a propósito: combinarlo con el where de
+  // 'estado' exige un índice compuesto en Firestore que este proyecto no
+  // tiene creado. Como esto se llama desde un onTap (sin nadie esperando el
+  // error), si la consulta fallaba por falta de índice, el clic no hacía
+  // nada visible -ni pantalla roja ni mensaje- en release. Se ordena acá en
+  // memoria en su lugar, con esta cantidad de barberos no hay ningún costo
+  // real.
   Future<List<BarberoModel>> obtenerActivos() async {
-    final snap = await _col.where('estado', isEqualTo: true).orderBy('nombreCompleto').get();
-    return snap.docs.map((d) => BarberoModel.fromMap(d.id, d.data())).toList();
+    final snap = await _col.where('estado', isEqualTo: true).get();
+    final lista = snap.docs.map((d) => BarberoModel.fromMap(d.id, d.data())).toList();
+    lista.sort((a, b) => a.nombreCompleto.compareTo(b.nombreCompleto));
+    return lista;
   }
 
   Future<void> crear({
