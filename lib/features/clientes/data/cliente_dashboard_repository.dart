@@ -64,6 +64,15 @@ class ClienteDashboardData {
 class ClienteDashboardRepository {
   final _reporteRepository = ReporteRepository();
 
+  // La consulta base es un año completo de ventas, así que si el usuario
+  // abre y cierra el panel varias veces (algo común mientras explora las
+  // gráficas) no tiene sentido volver a pedirlo todo cada vez. Se cachea a
+  // nivel de clase (estático) porque el diálogo crea una instancia nueva del
+  // repositorio cada vez que se abre.
+  static const _vigenciaCache = Duration(minutes: 5);
+  static ClienteDashboardData? _cache;
+  static DateTime? _cacheEn;
+
   bool _esClienteIdentificable(ReporteVentaModel v) {
     final nombre = v.nombreCliente.trim().toUpperCase();
     // "Consumidor final" (o vacío) no es un cliente real identificable: no
@@ -84,7 +93,12 @@ class ClienteDashboardRepository {
     int semanasSinVisitar = 6,
     int minVisitasInactivo = 1,
     int minVisitasPatron = 3,
+    bool forzarRecarga = false,
   }) async {
+    final cacheEn = _cacheEn;
+    if (!forzarRecarga && _cache != null && cacheEn != null && DateTime.now().difference(cacheEn) < _vigenciaCache) {
+      return _cache!;
+    }
     final fin = DateTime.now();
     final inicio = DateTime(fin.year, fin.month - mesesHistorial, fin.day);
     final ventas = await _reporteRepository.obtenerReporteVentas(inicio, fin);
@@ -149,7 +163,7 @@ class ClienteDashboardRepository {
       ...inactivos.take(10).map((c) => '${c.nombre} no visita desde hace ${c.diasSinVisitar} días.'),
     ];
 
-    return ClienteDashboardData(
+    final resultado = ClienteDashboardData(
       frecuentes: frecuentes.take(topFrecuentes).toList(),
       inactivos: inactivos,
       patrones: patrones,
@@ -158,5 +172,8 @@ class ClienteDashboardRepository {
       totalClientesUnicos: porCliente.length,
       totalVisitas: identificables.length,
     );
+    _cache = resultado;
+    _cacheEn = DateTime.now();
+    return resultado;
   }
 }

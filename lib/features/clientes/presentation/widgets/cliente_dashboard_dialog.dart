@@ -52,6 +52,11 @@ class _ClienteDashboardDialogState extends State<ClienteDashboardDialog> {
                       ],
                     ),
                   ),
+                  IconButton(
+                    tooltip: 'Actualizar',
+                    icon: const Icon(Icons.refresh, color: Colors.white),
+                    onPressed: () => setState(() => _future = ClienteDashboardRepository().obtenerDashboard(forzarRecarga: true)),
+                  ),
                   IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
                 ],
               ),
