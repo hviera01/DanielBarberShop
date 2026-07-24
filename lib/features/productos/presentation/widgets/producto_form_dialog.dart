@@ -26,6 +26,13 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
   final _precioVentaController = TextEditingController(text: '0');
   final _precioVenta2Controller = TextEditingController();
   final _precioVenta3Controller = TextEditingController();
+  // Sin `autofocus`: en Windows, pedir el foco durante el primer build (que
+  // es lo que hace `autofocus`) compite con la animación de apertura del
+  // Dialog y se pierde la primera tecla que se escribe. Pidiéndolo a mano
+  // después del primer frame (mismo mecanismo ya usado en
+  // registrar_venta_screen para este problema) el foco queda firme antes de
+  // que llegue cualquier tecla.
+  final _focusNombre = FocusNode();
 
   String? _idCategoria;
   bool _activo = true;
@@ -53,6 +60,9 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
       _activo = p.estado;
       _esServicio = p.esServicio;
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNombre.requestFocus();
+    });
   }
 
   @override
@@ -66,6 +76,7 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
     _precioVentaController.dispose();
     _precioVenta2Controller.dispose();
     _precioVenta3Controller.dispose();
+    _focusNombre.dispose();
     super.dispose();
   }
 
@@ -274,7 +285,7 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
                     const SizedBox(height: 14),
                     TextField(
                       controller: _nombreController,
-                      autofocus: true,
+                      focusNode: _focusNombre,
                       style: GoogleFonts.poppins(fontSize: 14),
                       decoration: _decoracion('Nombre'),
                     ),
