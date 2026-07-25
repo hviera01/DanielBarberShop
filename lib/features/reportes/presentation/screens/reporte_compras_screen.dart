@@ -9,6 +9,7 @@ import '../../../../core/utils/texto_utils.dart';
 import '../../../../core/utils/formato_moneda.dart';
 import '../../../../core/utils/exportador.dart';
 import '../../../../core/widgets/pdf_preview_dialog.dart';
+import '../../../compras/presentation/screens/detalle_compra_screen.dart';
 import '../../../proveedores/providers/proveedores_provider.dart';
 import '../../../usuarios/providers/usuarios_provider.dart';
 
@@ -32,6 +33,17 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
   bool _cargando = false;
   String? _error;
   List<ReporteCompraModel>? _compras;
+
+  // Cachea el resultado de _listaFiltrada: ese getter se llama varias veces
+  // por build (para el badge de total, para la lista y para exportar), y
+  // sin esto cada llamada recorría _compras entero con coincideFuzzy y
+  // todos los filtros de nuevo, aunque nada hubiera cambiado.
+  List<ReporteCompraModel>? _comprasCacheadas;
+  String? _busquedaCacheada;
+  String? _metodoPagoCacheado;
+  String? _condicionCacheada;
+  String? _usuarioCacheado;
+  List<ReporteCompraModel> _listaCacheada = [];
 
   static const _metodosPago = ['Efectivo', 'Transferencia', 'Tarjeta', 'Cheque'];
   static const _condiciones = ['Contado', 'Crédito'];
@@ -104,7 +116,15 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
   }
 
   List<ReporteCompraModel> get _listaFiltrada {
-    var lista = _compras ?? [];
+    final compras = _compras ?? [];
+    if (identical(compras, _comprasCacheadas) &&
+        _busquedaCacheada == _busqueda &&
+        _metodoPagoCacheado == _metodoPagoFiltro &&
+        _condicionCacheada == _condicionFiltro &&
+        _usuarioCacheado == _usuarioFiltro) {
+      return _listaCacheada;
+    }
+    var lista = compras;
     if (_busqueda.isNotEmpty) {
       lista = lista.where((c) => coincideFuzzy(c.textoBusqueda, _busqueda)).toList();
     }
@@ -117,7 +137,19 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
     if (_usuarioFiltro != null) {
       lista = lista.where((c) => c.usuarioRegistro == _usuarioFiltro).toList();
     }
+    _comprasCacheadas = compras;
+    _busquedaCacheada = _busqueda;
+    _metodoPagoCacheado = _metodoPagoFiltro;
+    _condicionCacheada = _condicionFiltro;
+    _usuarioCacheado = _usuarioFiltro;
+    _listaCacheada = lista;
     return lista;
+  }
+
+  void _verDetalle(String idCompra) {
+    Navigator.of(context).push(
+      MaterialPageRoute(fullscreenDialog: true, builder: (context) => DetalleCompraScreen(compraIdInicial: idCompra)),
+    );
   }
 
   Future<void> _exportarExcel() async {
@@ -425,18 +457,21 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
             return Column(
               children: [
                 if (index > 1) Divider(height: 1, color: Colors.grey.shade200),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  child: Row(
-                    children: [
-                      _celda(2, c.fechaRegistro != null ? formatoFecha.format(c.fechaRegistro!) : '-', gris: true),
-                      _celda(2, c.noFactura.isEmpty ? '-' : c.noFactura, peso: FontWeight.w600),
-                      _celda(3, c.razonSocial),
-                      _celda(2, formatearMoneda(c.montoTotal), peso: FontWeight.w700),
-                      if (mostrarMetodoPago) _celda(2, c.metodoPago, gris: true),
-                      if (mostrarCondicion) _celda(2, c.condicion, gris: true),
-                      if (mostrarUsuario) _celda(2, c.usuarioRegistro, gris: true),
-                    ],
+                InkWell(
+                  onTap: () => _verDetalle(c.id),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    child: Row(
+                      children: [
+                        _celda(2, c.fechaRegistro != null ? formatoFecha.format(c.fechaRegistro!) : '-', gris: true),
+                        _celda(2, c.noFactura.isEmpty ? '-' : c.noFactura, peso: FontWeight.w600),
+                        _celda(3, c.razonSocial),
+                        _celda(2, formatearMoneda(c.montoTotal), peso: FontWeight.w700),
+                        if (mostrarMetodoPago) _celda(2, c.metodoPago, gris: true),
+                        if (mostrarCondicion) _celda(2, c.condicion, gris: true),
+                        if (mostrarUsuario) _celda(2, c.usuarioRegistro, gris: true),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -472,38 +507,42 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
       separatorBuilder: (context, index) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final c = lista[index];
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFC7CBD3))),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(c.razonSocial.isEmpty ? 'Sin proveedor' : c.razonSocial, style: GoogleFonts.poppins(fontSize: 14.5, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
-                        Text('Factura ${c.noFactura}', style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade500)),
-                      ],
+        return InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _verDetalle(c.id),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFC7CBD3))),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(c.razonSocial.isEmpty ? 'Sin proveedor' : c.razonSocial, style: GoogleFonts.poppins(fontSize: 14.5, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
+                          Text('Factura ${c.noFactura}', style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade500)),
+                        ],
+                      ),
                     ),
-                  ),
-                  Text(formatearMoneda(c.montoTotal), style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF1A1A1A))),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _chipInfo('Pago', c.metodoPago),
-                  _chipInfo('Condición', c.condicion),
-                  _chipInfo('Fecha', c.fechaRegistro != null ? formatoFecha.format(c.fechaRegistro!) : '-'),
-                ],
-              ),
-            ],
+                    Text(formatearMoneda(c.montoTotal), style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF1A1A1A))),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chipInfo('Pago', c.metodoPago),
+                    _chipInfo('Condición', c.condicion),
+                    _chipInfo('Fecha', c.fechaRegistro != null ? formatoFecha.format(c.fechaRegistro!) : '-'),
+                  ],
+                ),
+              ],
+            ),
           ),
         );
       },

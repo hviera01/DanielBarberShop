@@ -26,6 +26,7 @@ class ImpresionEnVivoService {
   /// ORIGINAL sin importar esa configuración (ver generarPdfFactura).
   /// Devuelve true si logró imprimir.
   Future<bool> imprimirSilencioso(VentaModel venta, NegocioModel negocio, {bool? forzarCopia}) async {
+    if (!negocio.impresionHabilitada) return false;
     if (negocio.impresoraTermicaUrl.isEmpty) return false;
     try {
       final impresora = Printer(url: negocio.impresoraTermicaUrl, name: negocio.impresoraTermicaNombre);

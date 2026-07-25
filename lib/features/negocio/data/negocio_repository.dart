@@ -150,4 +150,9 @@ class NegocioRepository {
     await _doc.set({'impresoraRedIp': ip, 'impresoraRedPuerto': puerto}, SetOptions(merge: true));
     _invalidarCache();
   }
+
+  Future<void> establecerImpresionHabilitada(bool valor) async {
+    await _doc.set({'impresionHabilitada': valor}, SetOptions(merge: true));
+    _invalidarCache();
+  }
 }

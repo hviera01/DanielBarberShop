@@ -531,6 +531,16 @@ class _NegocioFormState extends ConsumerState<_NegocioForm> {
             'Elegí qué impresora usar para los recibos térmicos y para las etiquetas de productos. Se usarán en todo el sistema.',
             style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade600),
           ),
+          const SizedBox(height: 14),
+          _filaSwitchFactura(
+            titulo: 'Impresión habilitada',
+            descripcion:
+                'Interruptor general: apagado, la app nunca intenta imprimir nada -ni al confirmar una venta, ni al reimprimir, ni automático desde el celular- en ningún cierre, recibo o reporte. El PDF se puede seguir viendo/descargando igual, sin depender de ninguna impresora.',
+            valor: widget.modelo.impresionHabilitada,
+            onChanged: (v) => ref.read(negocioRepositoryProvider).establecerImpresionHabilitada(v),
+          ),
+          const SizedBox(height: 18),
+          Divider(color: Colors.grey.shade200),
           const SizedBox(height: 18),
           Flex(
             direction: esMovil ? Axis.vertical : Axis.horizontal,

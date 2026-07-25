@@ -225,7 +225,14 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
       // exclusivo de escritorio): se intenta por ESC/POS de red, y si no
       // hay impresora de red configurada o falla, se le pide a la PC
       // principal que la reimprima ella sola (ver PresenciaImpresionRepository).
+      // El interruptor general de impresión (ver NegocioScreen) se chequea
+      // acá porque esta rama no pasa por PdfPreviewDialog (que ya se
+      // autolimita solo).
       if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        if (!negocio.impresionHabilitada) {
+          _mostrarMensaje('La impresión está desactivada en Configuración de Negocio');
+          return;
+        }
         await _reimprimirEscPosORemoto(venta, negocio, esCopia);
         return;
       }

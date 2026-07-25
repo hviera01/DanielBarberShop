@@ -34,6 +34,19 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
   String? _error;
   List<ReporteVentaModel>? _ventas;
 
+  // Cachea el resultado de _listaFiltrada: ese getter se llama varias veces
+  // por build (para el badge de total, para la lista y para exportar), y
+  // sin esto cada llamada recorría _ventas entero con coincideFuzzy y todos
+  // los filtros de nuevo, aunque nada hubiera cambiado.
+  List<ReporteVentaModel>? _ventasCacheadas;
+  String? _busquedaCacheada;
+  String? _metodoPagoCacheado;
+  String? _condicionCacheada;
+  String? _estadoCacheado;
+  String? _tipoDocumentoCacheado;
+  String? _usuarioCacheado;
+  List<ReporteVentaModel> _listaCacheada = [];
+
   static const _metodosPago = ['Efectivo', 'Transferencia', 'Tarjeta', 'Cheque'];
   static const _condiciones = ['Contado', 'Crédito'];
   static const _estados = ['Activa', 'Anulada'];
@@ -114,7 +127,17 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
   }
 
   List<ReporteVentaModel> get _listaFiltrada {
-    var lista = _ventas ?? [];
+    final ventas = _ventas ?? [];
+    if (identical(ventas, _ventasCacheadas) &&
+        _busquedaCacheada == _busqueda &&
+        _metodoPagoCacheado == _metodoPagoFiltro &&
+        _condicionCacheada == _condicionFiltro &&
+        _estadoCacheado == _estadoFiltro &&
+        _tipoDocumentoCacheado == _tipoDocumentoFiltro &&
+        _usuarioCacheado == _usuarioFiltro) {
+      return _listaCacheada;
+    }
+    var lista = ventas;
     if (_busqueda.isNotEmpty) {
       lista = lista.where((v) => coincideFuzzy(v.textoBusqueda, _busqueda)).toList();
     }
@@ -133,6 +156,14 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
     if (_usuarioFiltro != null) {
       lista = lista.where((v) => v.usuarioRegistro == _usuarioFiltro).toList();
     }
+    _ventasCacheadas = ventas;
+    _busquedaCacheada = _busqueda;
+    _metodoPagoCacheado = _metodoPagoFiltro;
+    _condicionCacheada = _condicionFiltro;
+    _estadoCacheado = _estadoFiltro;
+    _tipoDocumentoCacheado = _tipoDocumentoFiltro;
+    _usuarioCacheado = _usuarioFiltro;
+    _listaCacheada = lista;
     return lista;
   }
 

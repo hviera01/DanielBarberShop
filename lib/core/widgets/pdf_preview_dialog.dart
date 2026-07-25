@@ -1,11 +1,13 @@
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
+import '../../features/negocio/providers/negocio_provider.dart';
 
-class PdfPreviewDialog extends StatefulWidget {
+class PdfPreviewDialog extends ConsumerStatefulWidget {
   final String titulo;
   final Future<Uint8List> Function() generarPdf;
   // Opcional: para imprimir directo en Windows, algunos PDF (el ticket
@@ -19,10 +21,10 @@ class PdfPreviewDialog extends StatefulWidget {
   const PdfPreviewDialog({super.key, required this.titulo, required this.generarPdf, this.generarPdfConFormato, required this.nombreArchivo, this.impresora});
 
   @override
-  State<PdfPreviewDialog> createState() => _PdfPreviewDialogState();
+  ConsumerState<PdfPreviewDialog> createState() => _PdfPreviewDialogState();
 }
 
-class _PdfPreviewDialogState extends State<PdfPreviewDialog> {
+class _PdfPreviewDialogState extends ConsumerState<PdfPreviewDialog> {
   bool _imprimiendo = false;
 
   Future<void> _imprimirDirecto() async {
@@ -49,6 +51,10 @@ class _PdfPreviewDialogState extends State<PdfPreviewDialog> {
     final tamano = MediaQuery.of(context).size;
     final anchoDialog = tamano.width < 760 ? tamano.width - 24 : 640.0;
     final altoDialog = tamano.height < 700 ? tamano.height - 60 : 720.0;
+    // Interruptor general de impresión (ver NegocioScreen): con esto
+    // apagado se sigue pudiendo ver/descargar el PDF, pero se ocultan los
+    // botones que mandan algo a una impresora de verdad.
+    final impresionHabilitada = ref.watch(negocioStreamProvider).value?.impresionHabilitada ?? false;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -67,7 +73,7 @@ class _PdfPreviewDialogState extends State<PdfPreviewDialog> {
                 IconButton(icon: const Icon(Icons.close, size: 20), onPressed: () => Navigator.pop(context)),
               ],
             ),
-            if (widget.impresora != null) ...[
+            if (widget.impresora != null && impresionHabilitada) ...[
               const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
@@ -91,14 +97,14 @@ class _PdfPreviewDialogState extends State<PdfPreviewDialog> {
             // CDN caído), el diálogo queda "cargando" para siempre. Para no
             // depender de eso, en web se ofrece descargar/imprimir directo
             // (no necesita pdf.js) en vez de mostrar la vista previa en pantalla.
-            if (kIsWeb) _accionesWeb() else _vistaPreviaNativa(),
+            if (kIsWeb) _accionesWeb(impresionHabilitada) else _vistaPreviaNativa(impresionHabilitada),
           ],
         ),
       ),
     );
   }
 
-  Widget _vistaPreviaNativa() {
+  Widget _vistaPreviaNativa(bool impresionHabilitada) {
     return Expanded(
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
@@ -107,7 +113,7 @@ class _PdfPreviewDialogState extends State<PdfPreviewDialog> {
           pdfFileName: widget.nombreArchivo,
           canChangeOrientation: false,
           canChangePageFormat: false,
-          allowPrinting: true,
+          allowPrinting: impresionHabilitada,
           allowSharing: true,
           useActions: true,
         ),
@@ -115,7 +121,7 @@ class _PdfPreviewDialogState extends State<PdfPreviewDialog> {
     );
   }
 
-  Widget _accionesWeb() {
+  Widget _accionesWeb(bool impresionHabilitada) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -135,16 +141,18 @@ class _PdfPreviewDialogState extends State<PdfPreviewDialog> {
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFF1A1A1A), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
           ),
         ),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: () => Printing.layoutPdf(onLayout: (format) => widget.generarPdf(), name: widget.nombreArchivo),
-            icon: const Icon(Icons.print_outlined, size: 18),
-            label: Text('Ver / imprimir', style: GoogleFonts.poppins(fontSize: 13)),
-            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFB6BCC7)), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        if (impresionHabilitada) ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => Printing.layoutPdf(onLayout: (format) => widget.generarPdf(), name: widget.nombreArchivo),
+              icon: const Icon(Icons.print_outlined, size: 18),
+              label: Text('Ver / imprimir', style: GoogleFonts.poppins(fontSize: 13)),
+              style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFB6BCC7)), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            ),
           ),
-        ),
+        ],
       ],
     );
   }

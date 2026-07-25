@@ -1023,6 +1023,11 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   // no se bloquea nada: la venta ya quedó guardada. En móvil además se
   // marca `pendienteImpresion` para poder reimprimirla después.
   Future<void> _manejarImpresion(VentaModel venta, NegocioModel negocio) async {
+    // Interruptor general de impresión (ver NegocioScreen): con esto
+    // apagado no se abre ni el diálogo de vista previa ni se intenta
+    // imprimir directo, para no interrumpir cada venta con algo que no hace
+    // falta mientras este negocio no use impresión.
+    if (!negocio.impresionHabilitada) return;
     if (!kIsWeb && Platform.isAndroid) {
       await _manejarImpresionAndroid(venta, negocio);
       return;

@@ -31,6 +31,13 @@ class ImpresionPendienteService {
     required VentaRepository ventaRepo,
     required void Function(String mensaje) mostrarMensaje,
   }) async {
+    // Interruptor general de impresión (ver NegocioScreen): con esto
+    // apagado no se intenta nada -ni diálogo de vista previa ni impresión
+    // directa-; la venta queda pendiente tal cual estaba.
+    if (!negocio.impresionHabilitada) {
+      mostrarMensaje('La impresión está desactivada en Configuración de Negocio');
+      return;
+    }
     if (!kIsWeb && Platform.isAndroid) {
       await _imprimirEscPosRed(venta, negocio, ventaRepo, mostrarMensaje);
       return;

@@ -71,6 +71,13 @@ class NegocioModel {
   // sistema operativo.
   final String impresoraRedIp;
   final int impresoraRedPuerto;
+  // Interruptor general de impresión (ver NegocioScreen): apaga por completo
+  // el intento de imprimir al confirmar una venta, reimprimir, o cualquier
+  // impresión automática/en vivo -sin tocar la posibilidad de ver/descargar
+  // el PDF, que sigue disponible igual-. Default false: mientras este
+  // negocio no tenga impresora física en uso, no tiene sentido que la app
+  // intente imprimir nada.
+  final bool impresionHabilitada;
 
   const NegocioModel({
     this.nombre = '',
@@ -97,6 +104,7 @@ class NegocioModel {
     this.modoImpresion = ModoImpresion.preguntar,
     this.impresoraRedIp = '',
     this.impresoraRedPuerto = 9100,
+    this.impresionHabilitada = false,
   });
 
   bool get tieneClaveEspecial => claveEspecialHash.isNotEmpty;
@@ -130,6 +138,7 @@ class NegocioModel {
       modoImpresion: data['modoImpresion'] ?? ModoImpresion.preguntar,
       impresoraRedIp: data['impresoraRedIp'] ?? '',
       impresoraRedPuerto: ((data['impresoraRedPuerto'] ?? 9100) as num).toInt(),
+      impresionHabilitada: data['impresionHabilitada'] ?? false,
     );
   }
 
@@ -159,6 +168,7 @@ class NegocioModel {
       'modoImpresion': modoImpresion,
       'impresoraRedIp': impresoraRedIp,
       'impresoraRedPuerto': impresoraRedPuerto,
+      'impresionHabilitada': impresionHabilitada,
     };
   }
 
@@ -187,6 +197,7 @@ class NegocioModel {
     String? modoImpresion,
     String? impresoraRedIp,
     int? impresoraRedPuerto,
+    bool? impresionHabilitada,
   }) {
     return NegocioModel(
       nombre: nombre ?? this.nombre,
@@ -213,6 +224,7 @@ class NegocioModel {
       modoImpresion: modoImpresion ?? this.modoImpresion,
       impresoraRedIp: impresoraRedIp ?? this.impresoraRedIp,
       impresoraRedPuerto: impresoraRedPuerto ?? this.impresoraRedPuerto,
+      impresionHabilitada: impresionHabilitada ?? this.impresionHabilitada,
     );
   }
 }
