@@ -44,9 +44,9 @@ class SideMenu extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
-    final esAdmin = authState.usuario?.rol == 'Administrador';
+    final rol = authState.usuario?.rol ?? '';
     final modulos = obtenerModulos().where((m) {
-      return m.subModulos.any((s) => esAdmin || !s.soloAdmin);
+      return m.subModulos.any((s) => s.roles.contains(rol));
     }).toList();
 
     return Material(
@@ -82,7 +82,7 @@ class SideMenu extends ConsumerWidget {
                   itemCount: modulos.length,
                   itemBuilder: (context, index) {
                     final modulo = modulos[index];
-                    final disponibles = modulo.subModulos.where((s) => esAdmin || !s.soloAdmin).toList();
+                    final disponibles = modulo.subModulos.where((s) => s.roles.contains(rol)).toList();
                     if (disponibles.length == 1) {
                       return ListTile(
                         leading: Icon(modulo.icono, color: modulo.color, size: 22),

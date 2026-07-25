@@ -4,7 +4,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../data/cita_model.dart';
 import '../../providers/citas_provider.dart';
+import '../../../auth/providers/auth_provider.dart';
 import '../../../barberos/providers/barberos_provider.dart';
+import '../../../../core/constants/roles.dart';
 import '../../../../core/utils/texto_utils.dart';
 import '../../../../core/providers/tabs_provider.dart';
 import '../../../../core/models/tab_item.dart';
@@ -155,6 +157,13 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
   Widget build(BuildContext context) {
     final citasAsync = ref.watch(citasStreamProvider);
     final barberosAsync = ref.watch(barberosStreamProvider);
+    // Un usuario con rol Barbero solo puede ver su propia agenda: se ignora
+    // cualquier selección del dropdown y se fuerza el filtro a su
+    // idBarbero vinculado (ver UsuarioModel.idBarbero), sin mostrarle el
+    // selector -no tendría sentido dejarlo elegir "todos" o a otro barbero-.
+    final usuario = ref.watch(authProvider).usuario;
+    final esBarbero = usuario?.rol == Roles.barbero;
+    final idBarberoFiltroEfectivo = esBarbero ? usuario?.idBarbero : _idBarberoFiltro;
 
     return Container(
       color: const Color(0xFFF2F3F7),
@@ -177,7 +186,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
                     children: [
                       SizedBox(width: esMovil ? constraints.maxWidth : 150, child: _campoFecha('Desde', _fechaInicio, () => _elegirFecha(true))),
                       SizedBox(width: esMovil ? constraints.maxWidth : 150, child: _campoFecha('Hasta', _fechaFin, () => _elegirFecha(false))),
-                      SizedBox(width: esMovil ? constraints.maxWidth : 200, child: _selectorBarbero(barberosAsync)),
+                      if (!esBarbero) SizedBox(width: esMovil ? constraints.maxWidth : 200, child: _selectorBarbero(barberosAsync)),
                       SizedBox(width: esMovil ? constraints.maxWidth : 260, child: _buscador()),
                       FilledButton.icon(
                         onPressed: () => _abrirFormulario(),
@@ -206,8 +215,13 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
                     final inicio = DateTime(_fechaInicio.year, _fechaInicio.month, _fechaInicio.day);
                     final fin = DateTime(_fechaFin.year, _fechaFin.month, _fechaFin.day, 23, 59, 59);
                     var lista = citas.where((c) => !c.fechaHora.isBefore(inicio) && !c.fechaHora.isAfter(fin)).toList();
-                    if (_idBarberoFiltro != null) {
-                      lista = lista.where((c) => c.idBarbero == _idBarberoFiltro).toList();
+                    if (esBarbero) {
+                      // Si el usuario Barbero no tiene idBarbero configurado
+                      // (mal armado desde Usuarios), no mostrar nada en vez
+                      // de mostrar las citas de todos por error.
+                      lista = lista.where((c) => c.idBarbero == (idBarberoFiltroEfectivo ?? '') && (idBarberoFiltroEfectivo ?? '').isNotEmpty).toList();
+                    } else if (idBarberoFiltroEfectivo != null && idBarberoFiltroEfectivo.isNotEmpty) {
+                      lista = lista.where((c) => c.idBarbero == idBarberoFiltroEfectivo).toList();
                     }
                     if (_busqueda.isNotEmpty) {
                       lista = lista.where((c) => coincideFuzzy(c.textoBusqueda, _busqueda)).toList();

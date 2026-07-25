@@ -59,7 +59,12 @@ class ComisionRepository {
     final lineas = await _lineasActivasDelPeriodo(inicio, finInclusive);
     return (
       cortes: _calcularCortes(lineas, idBarbero: idBarbero),
-      productos: _calcularProductos(lineas),
+      // Antes [idBarbero] no llegaba hasta acá: elegir un barbero en el
+      // filtro de la pantalla dejaba "Cortes" bien filtrado pero
+      // "Productos por vendedor" (y por lo tanto "Global") seguían
+      // mostrando la comisión de producto de todos los vendedores, no solo
+      // la del barbero elegido.
+      productos: _calcularProductos(lineas, tipo: idBarbero != null ? 'Barbero' : null, id: idBarbero),
     );
   }
 

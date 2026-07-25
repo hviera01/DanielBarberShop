@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../data/usuario_model.dart';
 import '../../providers/usuarios_provider.dart';
 import '../../../../core/constants/roles.dart';
+import '../../../barberos/providers/barberos_provider.dart';
 
 class UsuarioFormDialog extends ConsumerStatefulWidget {
   final UsuarioModel? usuario;
@@ -20,6 +21,7 @@ class _UsuarioFormDialogState extends ConsumerState<UsuarioFormDialog> {
   final _correoController = TextEditingController();
   final _claveController = TextEditingController();
   String _rol = Roles.empleado;
+  String? _idBarbero;
   bool _activo = true;
   bool _guardando = false;
   String? _error;
@@ -32,6 +34,7 @@ class _UsuarioFormDialogState extends ConsumerState<UsuarioFormDialog> {
       _nombreController.text = widget.usuario!.nombreCompleto;
       _correoController.text = widget.usuario!.correo;
       _rol = widget.usuario!.rol.isNotEmpty ? widget.usuario!.rol : Roles.empleado;
+      _idBarbero = widget.usuario!.idBarbero.isEmpty ? null : widget.usuario!.idBarbero;
       _activo = widget.usuario!.estado;
     }
   }
@@ -60,16 +63,21 @@ class _UsuarioFormDialogState extends ConsumerState<UsuarioFormDialog> {
       setState(() => _error = 'La contraseña es obligatoria');
       return;
     }
+    if (_rol == Roles.barbero && (_idBarbero == null || _idBarbero!.isEmpty)) {
+      setState(() => _error = 'Elegí a qué barbero corresponde este usuario');
+      return;
+    }
     setState(() {
       _guardando = true;
       _error = null;
     });
     try {
       final repo = ref.read(usuarioRepositoryProvider);
+      final idBarbero = _rol == Roles.barbero ? (_idBarbero ?? '') : '';
       if (!editando) {
-        await repo.crear(documento, nombre, correo, clave, _rol, _activo);
+        await repo.crear(documento, nombre, correo, clave, _rol, _activo, idBarbero: idBarbero);
       } else {
-        await repo.actualizar(widget.usuario!.id, documento, nombre, correo, _rol, _activo, clave.isEmpty ? null : clave);
+        await repo.actualizar(widget.usuario!.id, documento, nombre, correo, _rol, _activo, idBarbero: idBarbero, clave: clave.isEmpty ? null : clave);
       }
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -198,11 +206,33 @@ class _UsuarioFormDialogState extends ConsumerState<UsuarioFormDialog> {
               DropdownButtonFormField<String>(
                 initialValue: _rol,
                 decoration: _decoracion('Rol'),
-                items: [Roles.administrador, Roles.empleado]
+                items: [Roles.administrador, Roles.empleado, Roles.barbero]
                     .map((r) => DropdownMenuItem(value: r, child: Text(r, style: GoogleFonts.poppins(fontSize: 13))))
                     .toList(),
                 onChanged: (v) => setState(() => _rol = v ?? Roles.empleado),
               ),
+              // Un usuario con rol Barbero solo ve su propia Agenda de
+              // Citas y sus propias Comisiones (ver ModulosMenu/SideMenu):
+              // necesita estar vinculado a un documento de la colección
+              // `barberos` para saber cuál es "lo suyo".
+              if (_rol == Roles.barbero) ...[
+                const SizedBox(height: 14),
+                ref.watch(barberosStreamProvider).when(
+                      data: (barberos) {
+                        final activos = barberos.where((b) => b.estado).toList();
+                        return DropdownButtonFormField<String>(
+                          initialValue: _idBarbero,
+                          decoration: _decoracion('Barbero asociado'),
+                          items: activos
+                              .map((b) => DropdownMenuItem(value: b.id, child: Text(b.nombreCompleto, style: GoogleFonts.poppins(fontSize: 13))))
+                              .toList(),
+                          onChanged: (v) => setState(() => _idBarbero = v),
+                        );
+                      },
+                      loading: () => const LinearProgressIndicator(),
+                      error: (e, st) => Text('Error cargando barberos', style: GoogleFonts.poppins(color: Colors.red, fontSize: 12)),
+                    ),
+              ],
               const SizedBox(height: 18),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

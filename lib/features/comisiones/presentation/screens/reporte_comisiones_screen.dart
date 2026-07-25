@@ -4,7 +4,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../data/comision_model.dart';
 import '../../data/comision_repository.dart';
+import '../../../auth/providers/auth_provider.dart';
 import '../../../barberos/providers/barberos_provider.dart';
+import '../../../../core/constants/roles.dart';
 import '../../../../core/utils/formato_moneda.dart';
 
 class ReporteComisionesScreen extends ConsumerStatefulWidget {
@@ -25,10 +27,16 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
   bool _cargando = false;
   String? _error;
 
+  // Un usuario con rol Barbero solo puede ver sus propias comisiones: se
+  // fuerza el filtro a su idBarbero vinculado (ver UsuarioModel.idBarbero)
+  // desde el arranque, y no se le muestra el selector para elegir otro.
+  bool get _esBarbero => ref.read(authProvider).usuario?.rol == Roles.barbero;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    if (_esBarbero) _idBarberoFiltro = ref.read(authProvider).usuario?.idBarbero;
     _cargar();
   }
 
@@ -165,7 +173,7 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
                   children: [
                     SizedBox(width: esMovil ? constraints.maxWidth : 150, child: _campoFecha('Desde', _inicio, () => _elegirFecha(true))),
                     SizedBox(width: esMovil ? constraints.maxWidth : 150, child: _campoFecha('Hasta', _fin, () => _elegirFecha(false))),
-                    SizedBox(width: esMovil ? constraints.maxWidth : 200, child: _selectorBarbero()),
+                    if (!_esBarbero) SizedBox(width: esMovil ? constraints.maxWidth : 200, child: _selectorBarbero()),
                     SizedBox(
                       width: esMovil ? constraints.maxWidth : null,
                       child: FilledButton.icon(

@@ -11,7 +11,7 @@ class UsuarioRepository {
     });
   }
 
-  Future<void> crear(String documento, String nombreCompleto, String correo, String clave, String rol, bool estado) async {
+  Future<void> crear(String documento, String nombreCompleto, String correo, String clave, String rol, bool estado, {String idBarbero = ''}) async {
     final existe = await _col.where('documento', isEqualTo: documento).limit(1).get();
     if (existe.docs.isNotEmpty) {
       throw Exception('El número de documento ya existe');
@@ -25,12 +25,13 @@ class UsuarioRepository {
       'sal': sal,
       'rol': rol,
       'estado': estado,
+      'idBarbero': idBarbero,
       'intentosFallidos': 0,
       'fechaRegistro': FieldValue.serverTimestamp(),
     });
   }
 
-  Future<void> actualizar(String id, String documento, String nombreCompleto, String correo, String rol, bool estado, [String? clave]) async {
+  Future<void> actualizar(String id, String documento, String nombreCompleto, String correo, String rol, bool estado, {String idBarbero = '', String? clave}) async {
     final existe = await _col.where('documento', isEqualTo: documento).limit(2).get();
     final duplicado = existe.docs.any((d) => d.id != id);
     if (duplicado) {
@@ -42,6 +43,7 @@ class UsuarioRepository {
       'correo': correo,
       'rol': rol,
       'estado': estado,
+      'idBarbero': idBarbero,
     };
     if (clave != null && clave.trim().isNotEmpty) {
       // Cambiar la clave desbloquea al usuario y reinicia los intentos
