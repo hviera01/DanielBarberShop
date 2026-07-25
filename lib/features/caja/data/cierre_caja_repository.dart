@@ -87,4 +87,13 @@ class CierreCajaRepository {
       return snap.docs.map((d) => CierreCajaModel.fromMap(d.id, d.data())).toList();
     });
   }
+
+  Future<List<CierreCajaModel>> obtenerCierresPorRango(DateTime inicio, DateTime finInclusive) async {
+    final snap = await _col
+        .where('fechaFin', isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
+        .where('fechaFin', isLessThanOrEqualTo: Timestamp.fromDate(finInclusive))
+        .orderBy('fechaFin', descending: true)
+        .get();
+    return snap.docs.map((d) => CierreCajaModel.fromMap(d.id, d.data())).toList();
+  }
 }

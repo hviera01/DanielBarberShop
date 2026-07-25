@@ -92,7 +92,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
     );
     final ventaBase = VentaModel(
       id: '',
-      tipoDocumento: 'VentaSinFacturar',
+      tipoDocumento: 'Venta',
       numeroDocumento: '',
       documentoCliente: '',
       nombreCliente: cita.nombreCliente,

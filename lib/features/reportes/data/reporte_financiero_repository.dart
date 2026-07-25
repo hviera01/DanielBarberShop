@@ -198,6 +198,7 @@ class ReporteFinancieroRepository {
     final efectivoEstimadoFuture = _efectivoEstimado();
     final hace3Meses = DateTime(DateTime.now().year, DateTime.now().month - 2, 1);
     final egresosUltimos3MesesFuture = _egresoRepository.obtenerEgresosPorRango(hace3Meses, DateTime.now());
+    final cierresCajaFuture = _cierreCajaRepository.obtenerCierresPorRango(inicio, finInclusive);
 
     final ventasHeaders = await ventasHeadersFuture;
     final comprasHeaders = await comprasHeadersFuture;
@@ -211,6 +212,7 @@ class ReporteFinancieroRepository {
     final serieMensual = await serieMensualFuture;
     final efectivoEstimado = await efectivoEstimadoFuture;
     final egresosUltimos3Meses = await egresosUltimos3MesesFuture;
+    final cierresCaja = await cierresCajaFuture;
 
     final ventasValidas = ventasHeaders.where((v) => v.esActiva && !v.esCotizacion).toList();
     final comprasValidas = comprasHeaders.where((c) => c.esActiva).toList();
@@ -263,11 +265,32 @@ class ReporteFinancieroRepository {
 
     final ventasPorUsuario = _agruparPorUsuario(ventasValidas);
 
+    // Detalle línea por línea (servicio o producto) de cada venta, para
+    // poder ver "cuáles fueron" dentro del resumen Servicios vs. Productos y
+    // navegar de cada línea a su venta -antes el resumen solo traía el
+    // agregado del periodo. Los totales del resumen se derivan de esta misma
+    // lista, para no arriesgar que queden inconsistentes entre sí.
+    final detalleServiciosProductos = <DetalleItemFinanciero>[
+      for (var i = 0; i < ventasValidas.length; i++)
+        for (final item in detalleVentasPorVenta[i])
+          DetalleItemFinanciero(
+            idVenta: ventasValidas[i].id,
+            numeroDocumento: ventasValidas[i].numeroDocumento,
+            fecha: ventasValidas[i].fechaRegistro,
+            cliente: ventasValidas[i].nombreCliente.isEmpty ? 'CONSUMIDOR FINAL' : ventasValidas[i].nombreCliente,
+            nombreItem: item.nombreProducto,
+            esServicio: item.esServicio,
+            venta: item.subtotal,
+            costo: item.precioCompraUsado * item.cantidad,
+          ),
+    ]..sort((a, b) => (b.fecha ?? DateTime(2000)).compareTo(a.fecha ?? DateTime(2000)));
+
     final resumenServiciosProductos = ResumenServiciosProductos(
-      ventasServicios: itemsVenta.where((i) => i.esServicio).fold<double>(0, (s, i) => s + i.subtotal),
-      costoServicios: itemsVenta.where((i) => i.esServicio).fold<double>(0, (s, i) => s + i.precioCompraUsado * i.cantidad),
-      ventasProductos: itemsVenta.where((i) => !i.esServicio).fold<double>(0, (s, i) => s + i.subtotal),
-      costoProductos: itemsVenta.where((i) => !i.esServicio).fold<double>(0, (s, i) => s + i.precioCompraUsado * i.cantidad),
+      ventasServicios: detalleServiciosProductos.where((d) => d.esServicio).fold<double>(0, (s, d) => s + d.venta),
+      costoServicios: detalleServiciosProductos.where((d) => d.esServicio).fold<double>(0, (s, d) => s + d.costo),
+      ventasProductos: detalleServiciosProductos.where((d) => !d.esServicio).fold<double>(0, (s, d) => s + d.venta),
+      costoProductos: detalleServiciosProductos.where((d) => !d.esServicio).fold<double>(0, (s, d) => s + d.costo),
+      detalle: detalleServiciosProductos,
     );
 
     final totalAbonosComprasCredito = abonosCompra.fold<double>(0, (s, a) => s + a.montoAbonado);
@@ -318,6 +341,7 @@ class ReporteFinancieroRepository {
       abonosPorProveedor: abonosPorProveedor,
       recomendacionPago: recomendacionPago,
       balanceGeneral: balanceGeneral,
+      cierresCaja: cierresCaja,
     );
   }
 

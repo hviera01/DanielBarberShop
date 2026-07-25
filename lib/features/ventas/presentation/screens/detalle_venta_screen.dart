@@ -775,6 +775,10 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
                       Text(item.nombreProducto, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
                       if (item.reembasado) Text('Reembasado', style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.grey.shade400)),
                       if (item.descuentoPorcentaje > 0) Text('Descuento ${_formatoCantidad(item.descuentoPorcentaje)}%', style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.grey.shade400)),
+                      if (item.esServicio && item.idBarbero.isNotEmpty)
+                        Text('Cortó: ${item.nombreBarbero}', style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.grey.shade500)),
+                      if (item.vendidoPorTipo != 'N/A' && item.vendidoPorNombre.isNotEmpty)
+                        Text('Vendió: ${item.vendidoPorNombre}', style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.grey.shade500)),
                     ],
                   ),
                 ),
@@ -805,6 +809,10 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
                     [if (item.reembasado) 'Reembasado', if (item.descuentoPorcentaje > 0) 'Descuento ${_formatoCantidad(item.descuentoPorcentaje)}%'].join(' · '),
                     style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500),
                   ),
+                if (item.esServicio && item.idBarbero.isNotEmpty)
+                  Text('Cortó: ${item.nombreBarbero}', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500)),
+                if (item.vendidoPorTipo != 'N/A' && item.vendidoPorNombre.isNotEmpty)
+                  Text('Vendió: ${item.vendidoPorNombre}', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500)),
                 const SizedBox(height: 4),
                 Text(
                   '${_formatoCantidad(item.cantidad)} x ${formatearMoneda(_precioMostrado(item))} = ${formatearMoneda(_importeMostrado(item))}',

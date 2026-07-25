@@ -65,7 +65,6 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   final _regExoneradoController = TextEditingController();
   final _regSagController = TextEditingController();
   final _descuentoGlobalController = TextEditingController();
-  final _porcentajeTarjetaController = TextEditingController();
   bool _datosExpandidos = false;
   // Este negocio no cobra ISV: queda permanentemente en false (no hay
   // selector para cambiarlo) para no tener que tocar cada lugar del archivo
@@ -338,7 +337,6 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     _regExoneradoController.dispose();
     _regSagController.dispose();
     _descuentoGlobalController.dispose();
-    _porcentajeTarjetaController.dispose();
     for (final c in _ctrlCantidad.values) {
       c.dispose();
     }
@@ -765,7 +763,6 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     _regExoneradoController.clear();
     _regSagController.clear();
     _descuentoGlobalController.clear();
-    _porcentajeTarjetaController.clear();
     for (final c in _ctrlCantidad.values) {
       c.dispose();
     }
@@ -812,7 +809,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     switch (tipo) {
       case 'Cotizacion':
         return 'Crear Cotización';
-      case 'VentaSinFacturar':
+      case 'Venta':
         return 'Registrar Venta';
       default:
         return 'Crear Venta';
@@ -1353,6 +1350,38 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     );
   }
 
+  Widget _selectorComisionTarjeta(double valorActual) {
+    Widget opcion(double porcentaje) {
+      final activo = valorActual == porcentaje;
+      return Expanded(
+        child: InkWell(
+          onTap: () => ref.read(carritoVentaProvider.notifier).establecerPorcentajeTarjeta(porcentaje),
+          borderRadius: BorderRadius.circular(10),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            decoration: BoxDecoration(
+              color: activo ? const Color(0xFF0F1B3D) : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '${porcentaje.toStringAsFixed(1)}%',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: activo ? Colors.white : const Color(0xFF666A72)),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 50,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(color: const Color(0xFFE8EAF0), borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [opcion(2.9), opcion(3.5)]),
+    );
+  }
+
   Widget _tarjetaDatosVenta(CarritoVentaState carrito, bool esMovil) {
     final formatoFecha = DateFormat('dd/MM/yyyy');
 
@@ -1467,24 +1496,15 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                   ),
                 ),
               // Comisión bancaria: el cliente sigue pagando el total completo
-              // (no cambia totalAPagar), esto solo se guarda como metadata
-              // para que Caja/Reportes puedan calcular el neto real que
-              // ingresó por este pago.
+              // acá (no cambia totalAPagar en pantalla) — se guarda como
+              // metadata en la venta, y es recién al guardar (ver
+              // VentaRepository.registrarVenta) que se le resta al total
+              // registrado, igual que en el sistema viejo de la barbería.
+              // Dos tasas fijas (no texto libre) para que el cajero no
+              // tenga que saber de memoria el % exacto de cada tipo de
+              // tarjeta.
               if (!carrito.esCotizacion && carrito.condicion != 'Credito' && carrito.metodoPago == 'Tarjeta')
-                SizedBox(
-                  width: esMovil ? double.infinity : 160,
-                  child: TextField(
-                    controller: _porcentajeTarjetaController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-                    style: GoogleFonts.poppins(fontSize: 13),
-                    decoration: _decoracion('% comisión tarjeta'),
-                    onChanged: (v) {
-                      final valor = double.tryParse(v.replaceAll(',', '.')) ?? 0;
-                      ref.read(carritoVentaProvider.notifier).establecerPorcentajeTarjeta(valor);
-                    },
-                  ),
-                ),
+                SizedBox(width: esMovil ? double.infinity : 220, child: _selectorComisionTarjeta(carrito.porcentajeTarjeta)),
               InkWell(
                 onTap: () => setState(() => _datosExpandidos = !_datosExpandidos),
                 borderRadius: BorderRadius.circular(10),

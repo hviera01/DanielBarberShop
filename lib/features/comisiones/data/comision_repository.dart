@@ -13,15 +13,31 @@ const double umbralComisionProductoAlta = 30;
 
 double tasaComisionProducto(double cantidadTotal) => cantidadTotal >= umbralComisionProductoAlta ? tasaComisionProductoAlta : tasaComisionProductoBase;
 
+/// Una línea de detalle ya cruzada con los datos de la venta a la que
+/// pertenece (número de documento, fecha, cliente): `_lineasActivasDelPeriodo`
+/// la arma una sola vez para que tanto `_calcularCortes` como
+/// `_calcularProductos` puedan agrupar por lo que necesiten sin perder de
+/// vista a qué venta pertenece cada línea (necesario para el drill-down de
+/// "Cortes por barbero" -> lista de ventas -> detalle de venta).
+class _LineaDetalle {
+  final String idVenta;
+  final String numeroDocumento;
+  final DateTime? fecha;
+  final String cliente;
+  final ItemVentaModel item;
+
+  _LineaDetalle({required this.idVenta, required this.numeroDocumento, required this.fecha, required this.cliente, required this.item});
+}
+
 class ComisionRepository {
   final _db = FirebaseFirestore.instance;
   final _reporteRepository = ReporteRepository();
 
   /// Trae, en una sola consulta de collectionGroup, todas las líneas de
   /// detalle del periodo (igual que ReporteFinancieroRepository), y las junta
-  /// con el estado/número de la venta a la que pertenecen para poder excluir
-  /// ventas anuladas y cotizaciones.
-  Future<List<ItemVentaModel>> _lineasActivasDelPeriodo(DateTime inicio, DateTime finInclusive) async {
+  /// con la venta a la que pertenecen (para excluir anuladas/cotizaciones y
+  /// para poder armar el drill-down por venta).
+  Future<List<_LineaDetalle>> _lineasActivasDelPeriodo(DateTime inicio, DateTime finInclusive) async {
     // Las dos consultas son independientes (una a 'ventas', otra a la
     // collectionGroup 'detalle') así que se disparan en paralelo en vez de
     // esperar una y luego la otra.
@@ -33,16 +49,23 @@ class ComisionRepository {
         .get();
 
     final ventas = await ventasFuture;
-    final idsActivos = {for (final v in ventas.where((v) => v.esActiva && !v.esCotizacion)) v.id: true};
+    final activasPorId = {for (final v in ventas.where((v) => v.esActiva && !v.esCotizacion)) v.id: v};
     final snap = await detalleFuture;
 
-    final lineas = <ItemVentaModel>[];
+    final lineas = <_LineaDetalle>[];
     for (final doc in snap.docs) {
       final docPadre = doc.reference.parent.parent;
       if (docPadre == null) continue;
       if (docPadre.parent.id != 'ventas') continue;
-      if (!idsActivos.containsKey(docPadre.id)) continue;
-      lineas.add(ItemVentaModel.fromMap(doc.data()));
+      final venta = activasPorId[docPadre.id];
+      if (venta == null) continue;
+      lineas.add(_LineaDetalle(
+        idVenta: docPadre.id,
+        numeroDocumento: venta.numeroDocumento,
+        fecha: venta.fechaRegistro,
+        cliente: venta.nombreCliente,
+        item: ItemVentaModel.fromMap(doc.data()),
+      ));
     }
     return lineas;
   }
@@ -51,20 +74,21 @@ class ComisionRepository {
   /// pantalla llamaba a [obtenerComisionCortes] y [obtenerComisionProductos]
   /// por separado y cada uno volvía a pedir las líneas del periodo,
   /// duplicando las consultas a Firestore.
+  /// [tipoFiltro]/[idFiltro] identifican a la persona elegida en el combo de
+  /// la pantalla, que puede ser un barbero o un usuario (para ver si un
+  /// usuario que no es barbero vendió productos). Un usuario nunca tiene
+  /// cortes propios, así que si el filtro es de tipo 'Usuario' la lista de
+  /// cortes queda vacía en vez de mostrar la de todos los barberos.
   Future<({List<ComisionCorteBarbero> cortes, List<ComisionProductoVendedor> productos})> obtenerComisionesDelPeriodo(
     DateTime inicio,
     DateTime finInclusive, {
-    String? idBarbero,
+    String? tipoFiltro,
+    String? idFiltro,
   }) async {
     final lineas = await _lineasActivasDelPeriodo(inicio, finInclusive);
     return (
-      cortes: _calcularCortes(lineas, idBarbero: idBarbero),
-      // Antes [idBarbero] no llegaba hasta acá: elegir un barbero en el
-      // filtro de la pantalla dejaba "Cortes" bien filtrado pero
-      // "Productos por vendedor" (y por lo tanto "Global") seguían
-      // mostrando la comisión de producto de todos los vendedores, no solo
-      // la del barbero elegido.
-      productos: _calcularProductos(lineas, tipo: idBarbero != null ? 'Barbero' : null, id: idBarbero),
+      cortes: tipoFiltro == 'Usuario' ? <ComisionCorteBarbero>[] : _calcularCortes(lineas, idBarbero: tipoFiltro == 'Barbero' ? idFiltro : null),
+      productos: _calcularProductos(lineas, tipo: tipoFiltro, id: idFiltro),
     );
   }
 
@@ -73,13 +97,23 @@ class ComisionRepository {
     return _calcularCortes(lineas, idBarbero: idBarbero);
   }
 
-  List<ComisionCorteBarbero> _calcularCortes(List<ItemVentaModel> lineas, {String? idBarbero}) {
-    final cortes = lineas.where((i) => i.esServicio && i.idBarbero.isNotEmpty).where((i) => idBarbero == null || i.idBarbero == idBarbero);
+  List<ComisionCorteBarbero> _calcularCortes(List<_LineaDetalle> lineas, {String? idBarbero}) {
+    final cortes = lineas.where((l) => l.item.esServicio && l.item.idBarbero.isNotEmpty).where((l) => idBarbero == null || l.item.idBarbero == idBarbero);
 
     final porBarbero = <String, ComisionCorteBarbero>{};
-    for (final item in cortes) {
+    for (final linea in cortes) {
+      final item = linea.item;
       final actual = porBarbero[item.idBarbero];
       final comisionLinea = item.subtotal * (item.pctComisionBarbero / 100);
+      final lineaComision = LineaComisionVenta(
+        idVenta: linea.idVenta,
+        numeroDocumento: linea.numeroDocumento,
+        fecha: linea.fecha,
+        cliente: linea.cliente,
+        nombreItem: item.nombreProducto,
+        monto: item.subtotal,
+        comision: comisionLinea,
+      );
       if (actual == null) {
         porBarbero[item.idBarbero] = ComisionCorteBarbero(
           idBarbero: item.idBarbero,
@@ -87,6 +121,7 @@ class ComisionRepository {
           cantidadCortes: item.cantidad,
           montoTotal: item.subtotal,
           comisionTotal: comisionLinea,
+          lineas: [lineaComision],
         );
       } else {
         porBarbero[item.idBarbero] = ComisionCorteBarbero(
@@ -95,6 +130,7 @@ class ComisionRepository {
           cantidadCortes: actual.cantidadCortes + item.cantidad,
           montoTotal: actual.montoTotal + item.subtotal,
           comisionTotal: actual.comisionTotal + comisionLinea,
+          lineas: [...actual.lineas, lineaComision],
         );
       }
     }
@@ -108,8 +144,8 @@ class ComisionRepository {
     return _calcularProductos(lineas, tipo: tipo, id: id);
   }
 
-  List<ComisionProductoVendedor> _calcularProductos(List<ItemVentaModel> lineas, {String? tipo, String? id}) {
-    final productos = lineas.where((i) => !i.esServicio && i.vendidoPorTipo != 'N/A' && i.vendidoPorId.isNotEmpty).where((i) {
+  List<ComisionProductoVendedor> _calcularProductos(List<_LineaDetalle> lineas, {String? tipo, String? id}) {
+    final productos = lineas.map((l) => l.item).where((i) => !i.esServicio && i.vendidoPorTipo != 'N/A' && i.vendidoPorId.isNotEmpty).where((i) {
       if (tipo != null && i.vendidoPorTipo != tipo) return false;
       if (id != null && i.vendidoPorId != id) return false;
       return true;

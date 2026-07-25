@@ -90,13 +90,18 @@ class CarritoCompraNotifier extends Notifier<CarritoCompraState> {
   /// Agrega un producto directamente a la tabla, con cantidad 1 y el costo
   /// unitario que ya tiene registrado el producto (editable en la fila).
   void agregarProductoDirecto(ProductoModel producto) {
+    // El precioCompra del catálogo ya incluye ISV si el producto se cargó
+    // así; si esta compra tiene ISV activo, hay que sacárselo antes de
+    // cargarlo a la línea -si no, al aplicarle el ISV de la compra de
+    // nuevo, quedaría contado dos veces.
+    final precioCompra = state.isvPorcentaje > 0 ? redondearMoneda(producto.precioCompra / (1 + state.isvPorcentaje / 100)) : producto.precioCompra;
     final item = ItemCompraModel(
       idProducto: producto.id,
       idCategoria: producto.idCategoria,
       nombreProducto: producto.nombre,
-      precioCompra: producto.precioCompra,
+      precioCompra: precioCompra,
       cantidad: 1,
-      subtotal: _subtotalLinea(producto.precioCompra, 1, 0),
+      subtotal: _subtotalLinea(precioCompra, 1, 0),
       precioVentaNuevo: producto.precioVenta,
     );
     state = state.copyWith(items: [...state.items, item]);
@@ -143,7 +148,7 @@ class CarritoCompraNotifier extends Notifier<CarritoCompraState> {
   }
 
   void establecerMetodoPago(String v) => state = state.copyWith(metodoPago: v);
-  void establecerFecha(DateTime v) => state = state.copyWith(fecha: v);
+  void establecerFecha(DateTime v) => state = state.copyWith(fecha: v, fechaVencimiento: v.add(const Duration(days: 30)));
   void establecerFechaVencimiento(DateTime v) => state = state.copyWith(fechaVencimiento: v);
   void establecerDescuentoGlobal(double v) => state = state.copyWith(descuentoGlobalPorcentaje: v);
   void establecerIsv(double v) => state = state.copyWith(isvPorcentaje: v);

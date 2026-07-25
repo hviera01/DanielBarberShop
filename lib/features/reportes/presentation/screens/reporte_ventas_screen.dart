@@ -50,7 +50,7 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
   static const _metodosPago = ['Efectivo', 'Transferencia', 'Tarjeta', 'Cheque'];
   static const _condiciones = ['Contado', 'Crédito'];
   static const _estados = ['Activa', 'Anulada'];
-  static const _tiposDocumento = ['Factura', 'Boleta', 'Cotizacion', 'VentaSinFacturar'];
+  static const _tiposDocumento = ['Factura', 'Boleta', 'Cotizacion', 'Venta'];
 
   @override
   void initState() {

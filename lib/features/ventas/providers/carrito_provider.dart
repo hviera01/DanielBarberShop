@@ -61,7 +61,7 @@ class CarritoVentaState {
   CarritoVentaState({
     this.idEnEspera,
     this.items = const [],
-    this.tipoDocumento = 'VentaSinFacturar',
+    this.tipoDocumento = 'Venta',
     this.condicion = 'Contado',
     this.metodoPago = 'Efectivo',
     this.documentoCliente = '',
@@ -78,7 +78,7 @@ class CarritoVentaState {
   }) : fecha = fecha ?? DateTime.now();
 
   bool get esCotizacion => tipoDocumento == 'Cotizacion';
-  bool get esVentaSinFacturar => tipoDocumento == 'VentaSinFacturar';
+  bool get esVentaSinFacturar => tipoDocumento == 'Venta';
   bool get esCredito => condicion == 'Credito';
 
   // Este negocio no cobra ISV de verdad: los datos reales migrados de

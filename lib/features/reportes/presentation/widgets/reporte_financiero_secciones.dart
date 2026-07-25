@@ -4,6 +4,14 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../data/reporte_financiero_model.dart';
 import '../../../../core/utils/formato_moneda.dart';
+import '../../../caja/data/cierre_caja_model.dart';
+import '../../../ventas/presentation/screens/detalle_venta_screen.dart';
+
+void _abrirDetalleVenta(BuildContext context, String idVenta) {
+  Navigator.of(context).push(
+    MaterialPageRoute(fullscreenDialog: true, builder: (context) => DetalleVentaScreen(ventaIdInicial: idVenta)),
+  );
+}
 
 const colorVentasFinanciero = Color(0xFF0F1B3D);
 const colorComprasFinanciero = Color(0xFFF59E0B);
@@ -80,7 +88,7 @@ Widget _leyenda(String texto, Color color) {
 
 // ---------- Utilidad Bruta y Neta ----------
 
-Widget seccionUtilidad(ReporteFinancieroData data, bool esMovil) {
+Widget seccionUtilidad(BuildContext context, ReporteFinancieroData data, bool esMovil) {
   final filaBruta = Wrap(
     crossAxisAlignment: WrapCrossAlignment.center,
     spacing: 4,
@@ -132,17 +140,86 @@ Widget seccionUtilidad(ReporteFinancieroData data, bool esMovil) {
           _stat('Productos', data.resumenServiciosProductos.ventasProductos, const Color(0xFF64748B), sub: 'Utilidad ${formatearMoneda(data.resumenServiciosProductos.utilidadProductos)}'),
         ],
       ),
+      const SizedBox(height: 16),
+      _tablaDetalleServiciosProductos(context, data.resumenServiciosProductos.detalle, esMovil),
       const SizedBox(height: 24),
       Text('Ganancia por Venta', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700)),
       const SizedBox(height: 3),
-      Text('Cada venta individual del periodo, con su costo y ganancia.', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade500)),
+      Text('Cada venta individual del periodo, con su costo y ganancia. Tocá una fila para ver el detalle.', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade500)),
       const SizedBox(height: 10),
-      _tabaGananciaPorVenta(data.gananciaPorVenta, esMovil),
+      _tabaGananciaPorVenta(context, data.gananciaPorVenta, esMovil),
     ],
   );
 }
 
-Widget _tabaGananciaPorVenta(List<GananciaPorVenta> lista, bool esMovil) {
+// Venta/costo/utilidad detallado por línea (qué producto o servicio
+// compone cada monto), no solo el agregado del periodo -pedido explícito:
+// "ponelos de forma más detallada venta costo y utilidad, y también el
+// detalle de cuáles fueron".
+Widget _tablaDetalleServiciosProductos(BuildContext context, List<DetalleItemFinanciero> lista, bool esMovil) {
+  if (lista.isEmpty) {
+    return _tarjeta(child: Text('Sin servicios ni productos vendidos en el rango seleccionado.', style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade600)));
+  }
+  final formatoFecha = DateFormat('dd/MM/yyyy');
+  return _tarjeta(
+    child: Column(
+      children: [
+        Row(
+          children: [
+            SizedBox(width: 70, child: Text('TIPO', style: _estiloHeaderTabla())),
+            Expanded(flex: 2, child: Text('ITEM / DOCUMENTO', style: _estiloHeaderTabla())),
+            if (!esMovil) Expanded(child: Text('VENTA', textAlign: TextAlign.right, style: _estiloHeaderTabla())),
+            if (!esMovil) Expanded(child: Text('COSTO', textAlign: TextAlign.right, style: _estiloHeaderTabla())),
+            Expanded(child: Text('UTILIDAD', textAlign: TextAlign.right, style: _estiloHeaderTabla())),
+          ],
+        ),
+        Divider(height: 16, color: Colors.grey.shade300),
+        for (final item in lista.take(80)) ...[
+          InkWell(
+            onTap: () => _abrirDetalleVenta(context, item.idVenta),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 70,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(color: item.esServicio ? const Color(0xFF14B8A6).withOpacity(0.14) : const Color(0xFF64748B).withOpacity(0.14), borderRadius: BorderRadius.circular(8)),
+                      child: Text(item.esServicio ? 'Servicio' : 'Producto', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: item.esServicio ? const Color(0xFF0F766E) : const Color(0xFF475569))),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(item.nombreItem, style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+                        Text(
+                          '${item.numeroDocumento} · ${item.cliente} · ${item.fecha != null ? formatoFecha.format(item.fecha!) : '-'}',
+                          style: GoogleFonts.poppins(fontSize: 10.5, color: Colors.grey.shade500),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!esMovil) Expanded(child: Text(formatearMoneda(item.venta), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 12))),
+                  if (!esMovil) Expanded(child: Text(formatearMoneda(item.costo), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600))),
+                  Expanded(child: Text(formatearMoneda(item.utilidad), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: item.utilidad >= 0 ? const Color(0xFF16A34A) : const Color(0xFF0F1B3D)))),
+                ],
+              ),
+            ),
+          ),
+          if (item != lista.take(80).last) Divider(height: 1, color: Colors.grey.shade200),
+        ],
+        if (lista.length > 80) Padding(padding: const EdgeInsets.only(top: 10), child: Text('+ ${lista.length - 80} más...', style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade500))),
+      ],
+    ),
+  );
+}
+
+Widget _tabaGananciaPorVenta(BuildContext context, List<GananciaPorVenta> lista, bool esMovil) {
   if (lista.isEmpty) {
     return _tarjeta(child: Text('Sin ventas en el rango seleccionado.', style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade600)));
   }
@@ -162,27 +239,30 @@ Widget _tabaGananciaPorVenta(List<GananciaPorVenta> lista, bool esMovil) {
         ),
         Divider(height: 16, color: Colors.grey.shade300),
         for (final v in lista.take(50)) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(
-              children: [
-                SizedBox(width: 90, child: Text(v.fecha != null ? formatoFecha.format(v.fecha!) : '-', style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade600))),
-                Expanded(
-                  flex: 2,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(v.numeroDocumento, style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600)),
-                      Text(v.cliente, style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500), overflow: TextOverflow.ellipsis),
-                    ],
+          InkWell(
+            onTap: () => _abrirDetalleVenta(context, v.idVenta),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  SizedBox(width: 90, child: Text(v.fecha != null ? formatoFecha.format(v.fecha!) : '-', style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade600))),
+                  Expanded(
+                    flex: 2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(v.numeroDocumento, style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600)),
+                        Text(v.cliente, style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500), overflow: TextOverflow.ellipsis),
+                      ],
+                    ),
                   ),
-                ),
-                if (!esMovil) Expanded(child: Text(formatearMoneda(v.ventas), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 12))),
-                if (!esMovil) Expanded(child: Text(formatearMoneda(v.costo), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600))),
-                Expanded(child: Text(formatearMoneda(v.ganancia), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: v.ganancia >= 0 ? const Color(0xFF16A34A) : const Color(0xFF0F1B3D)))),
-                SizedBox(width: 55, child: Text('${v.margenPorcentaje.toStringAsFixed(0)}%', textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade600))),
-              ],
+                  if (!esMovil) Expanded(child: Text(formatearMoneda(v.ventas), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 12))),
+                  if (!esMovil) Expanded(child: Text(formatearMoneda(v.costo), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600))),
+                  Expanded(child: Text(formatearMoneda(v.ganancia), textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: v.ganancia >= 0 ? const Color(0xFF16A34A) : const Color(0xFF0F1B3D)))),
+                  SizedBox(width: 55, child: Text('${v.margenPorcentaje.toStringAsFixed(0)}%', textAlign: TextAlign.right, style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade600))),
+                ],
+              ),
             ),
           ),
           if (v != lista.take(50).last) Divider(height: 1, color: Colors.grey.shade200),
@@ -197,7 +277,7 @@ TextStyle _estiloHeaderTabla() => GoogleFonts.poppins(fontSize: 10, fontWeight: 
 
 // ---------- Flujo de Efectivo ----------
 
-Widget seccionFlujoEfectivo(ReporteFinancieroData data, bool esMovil) {
+Widget seccionFlujoEfectivo(BuildContext context, ReporteFinancieroData data, bool esMovil) {
   final flujo = data.flujoEfectivo;
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -240,7 +320,7 @@ Widget seccionFlujoEfectivo(ReporteFinancieroData data, bool esMovil) {
 
 // ---------- Comparación mensual ----------
 
-Widget seccionComparacionMensual(ReporteFinancieroData data, bool esMovil) {
+Widget seccionComparacionMensual(BuildContext context, ReporteFinancieroData data, bool esMovil) {
   final serie = data.serieMensual;
   final maximo = serie.fold<double>(0, (m, p) => [m, p.totalVentas, p.totalCompras].reduce((a, b) => a > b ? a : b));
   final formatoMes = DateFormat('MMM yy', 'es');
@@ -312,7 +392,7 @@ Widget seccionComparacionMensual(ReporteFinancieroData data, bool esMovil) {
 
 // ---------- Ranking de productos ----------
 
-Widget seccionRankingProductos(ReporteFinancieroData data, bool esMovil) {
+Widget seccionRankingProductos(BuildContext context, ReporteFinancieroData data, bool esMovil) {
   final columnas = [
     _tablaRanking('Más vendidos (cantidad)', data.topVendidosPorCantidad, esCantidad: true),
     _tablaRanking('Más comprados (cantidad)', data.topCompradosPorCantidad, esCantidad: true),
@@ -368,7 +448,7 @@ Widget _filaRanking(RankingProducto item, double maximo, {required bool esCantid
 
 // ---------- Productos sin venta ----------
 
-Widget seccionProductosSinVenta(ReporteFinancieroData data, bool esMovil) {
+Widget seccionProductosSinVenta(BuildContext context, ReporteFinancieroData data, bool esMovil) {
   final lista = data.productosSinVenta;
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -404,7 +484,7 @@ Widget seccionProductosSinVenta(ReporteFinancieroData data, bool esMovil) {
 
 // ---------- Ventas por usuario ----------
 
-Widget seccionVentasPorUsuario(ReporteFinancieroData data, bool esMovil) {
+Widget seccionVentasPorUsuario(BuildContext context, ReporteFinancieroData data, bool esMovil) {
   final lista = data.ventasPorUsuario;
   if (lista.isEmpty) {
     return _tarjeta(child: Text('Sin ventas en el rango seleccionado.', style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade600)));
@@ -469,7 +549,7 @@ Widget seccionVentasPorUsuario(ReporteFinancieroData data, bool esMovil) {
 
 // ---------- Abonos a compras crédito ----------
 
-Widget seccionAbonosComprasCredito(ReporteFinancieroData data, bool esMovil) {
+Widget seccionAbonosComprasCredito(BuildContext context, ReporteFinancieroData data, bool esMovil) {
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -511,7 +591,7 @@ Widget seccionAbonosComprasCredito(ReporteFinancieroData data, bool esMovil) {
 
 // ---------- Recomendación de pago ----------
 
-Widget seccionRecomendacionPago(ReporteFinancieroData data, bool esMovil) {
+Widget seccionRecomendacionPago(BuildContext context, ReporteFinancieroData data, bool esMovil) {
   final r = data.recomendacionPago;
   final tarjetas = [
     _tarjetaRecomendacion(
@@ -553,7 +633,7 @@ Widget _tarjetaRecomendacion(String titulo, double monto, String explicacion) {
 
 // ---------- Balance general ----------
 
-Widget seccionBalanceGeneral(ReporteFinancieroData data, bool esMovil) {
+Widget seccionBalanceGeneral(BuildContext context, ReporteFinancieroData data, bool esMovil) {
   final b = data.balanceGeneral;
   final activos = _tarjeta(
     child: Column(
@@ -602,6 +682,147 @@ Widget _filaBalance(String etiqueta, double valor, {bool negrita = false}) {
         Text(etiqueta, style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: negrita ? FontWeight.w700 : FontWeight.w400)),
         Text(formatearMoneda(valor), style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: negrita ? FontWeight.w800 : FontWeight.w600)),
       ],
+    ),
+  );
+}
+
+// ---------- Cierres de Caja ----------
+
+Widget seccionCierresCaja(BuildContext context, ReporteFinancieroData data, bool esMovil) {
+  final lista = data.cierresCaja;
+  final formatoFecha = DateFormat('dd/MM/yyyy HH:mm');
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _explicacion('Cierres de caja registrados en el rango de fechas seleccionado (por fecha de cierre). Tocá uno para ver su detalle completo.'),
+      if (lista.isEmpty)
+        _tarjeta(child: Text('Sin cierres de caja en el rango seleccionado.', style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade600)))
+      else
+        _tarjeta(
+          child: Column(
+            children: [
+              for (final c in lista) ...[
+                InkWell(
+                  onTap: () => _abrirDetalleCierre(context, c),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(formatoFecha.format(c.fechaFin), style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                              Text(c.usuarioResponsable.isEmpty ? '-' : c.usuarioResponsable, style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500)),
+                            ],
+                          ),
+                        ),
+                        if (!esMovil) Expanded(child: Text('Gran total: ${formatearMoneda(c.granTotal)}', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600))),
+                        Expanded(
+                          child: Text(
+                            'Diferencia: ${formatearMoneda(c.diferencia)}',
+                            textAlign: TextAlign.right,
+                            style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: c.diferencia == 0 ? const Color(0xFF16A34A) : const Color(0xFFDC2626)),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
+                      ],
+                    ),
+                  ),
+                ),
+                if (c != lista.last) Divider(height: 1, color: Colors.grey.shade200),
+              ],
+            ],
+          ),
+        ),
+    ],
+  );
+}
+
+Widget _filaTexto(String etiqueta, String valor) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 5),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(etiqueta, style: GoogleFonts.poppins(fontSize: 12.5)),
+        Text(valor, style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: FontWeight.w600)),
+      ],
+    ),
+  );
+}
+
+void _abrirDetalleCierre(BuildContext context, CierreCajaModel c) {
+  final formatoFecha = DateFormat('dd/MM/yyyy HH:mm');
+  showDialog(
+    context: context,
+    builder: (context) => Dialog(
+      insetPadding: const EdgeInsets.all(20),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 600),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
+              decoration: const BoxDecoration(color: Color(0xFF0F1B3D), borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text('Cierre de caja · ${formatoFecha.format(c.fechaFin)}', style: GoogleFonts.poppins(fontSize: 14.5, fontWeight: FontWeight.w700, color: Colors.white)),
+                  ),
+                  IconButton(icon: const Icon(Icons.close, color: Colors.white, size: 20), onPressed: () => Navigator.pop(context)),
+                ],
+              ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _filaTexto('Periodo desde', formatoFecha.format(c.fechaInicio)),
+                    _filaTexto('Periodo hasta', formatoFecha.format(c.fechaFin)),
+                    const Divider(height: 22),
+                    _filaBalance('Monto inicial', c.montoInicial),
+                    _filaBalance('Ingreso efectivo', c.ingresosEfectivo),
+                    _filaBalance('Ingreso tarjeta', c.ingresosTarjeta),
+                    _filaBalance('Ingreso transferencia', c.ingresosTransferencia),
+                    _filaBalance('Egreso efectivo', c.egresosEfectivo),
+                    _filaBalance('Egreso transferencia', c.egresosTransferencia),
+                    const Divider(height: 22),
+                    _filaBalance('Total calculado (efectivo)', c.totalCalculadoEfectivo),
+                    _filaBalance('Total transferencia', c.totalTransferencia),
+                    _filaBalance('Gran total', c.granTotal, negrita: true),
+                    _filaBalance('Total real contado', c.totalReal, negrita: true),
+                    const Divider(height: 22),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Diferencia', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700)),
+                        Text(
+                          formatearMoneda(c.diferencia),
+                          style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w800, color: c.diferencia == 0 ? const Color(0xFF16A34A) : const Color(0xFFDC2626)),
+                        ),
+                      ],
+                    ),
+                    Text('Responsable: ${c.usuarioResponsable.isEmpty ? '-' : c.usuarioResponsable}', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600)),
+                    if (c.observaciones.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text('Observaciones', style: GoogleFonts.poppins(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
+                      Text(c.observaciones, style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade700)),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     ),
   );
 }

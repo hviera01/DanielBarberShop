@@ -17,7 +17,7 @@ class VentaRepository {
     switch (tipoDocumento) {
       case 'Cotizacion':
         return 'cotizacion';
-      case 'VentaSinFacturar':
+      case 'Venta':
         return 'ventaSinFacturar';
       default:
         return 'venta';
@@ -25,7 +25,7 @@ class VentaRepository {
   }
 
   String _formatearCorrelativo(String tipoDocumento, int numero) {
-    if (tipoDocumento == 'VentaSinFacturar') {
+    if (tipoDocumento == 'Venta') {
       return numero.toString().padLeft(4, '0');
     }
     return numero.toString().padLeft(8, '0');
@@ -75,9 +75,16 @@ class VentaRepository {
     // instantáneo.
     Set<String> categoriasSinControlStock = const {},
     // % de comisión bancaria si metodoPago == 'Tarjeta' (ver
-    // carrito_provider): solo metadata, no afecta totalAPagar.
+    // carrito_provider/_selectorComisionTarjeta en RegistrarVentaScreen,
+    // 2.9% o 3.5%). El cliente paga el total completo en el momento (no se
+    // le resta nada ahí, ni en el ticket que ve mientras cobra) pero el
+    // total que queda REGISTRADO en la venta -y por lo tanto lo que
+    // aparece después en el detalle, reimpresiones y reportes- ya sale con
+    // la comisión bancaria restada, igual que en el sistema viejo de la
+    // barbería (que sobreescribía el total registrado con el neto).
     double porcentajeTarjeta = 0,
   }) async {
+    final totalRegistrado = metodoPago == 'Tarjeta' && porcentajeTarjeta > 0 ? redondearMoneda(totalAPagar * (1 - porcentajeTarjeta / 100)) : totalAPagar;
     final claveContador = _claveContador(tipoDocumento);
     final contadorRef = _colContadores.doc(claveContador);
     final ventaRef = _colVentas.doc();
@@ -151,7 +158,7 @@ class VentaRepository {
         'montoCambio': montoCambio,
         'subtotal': subtotal,
         'impuesto': impuesto,
-        'totalAPagar': totalAPagar,
+        'totalAPagar': totalRegistrado,
         'condicion': condicion,
         'fechaVencimiento': fechaVencimiento != null ? Timestamp.fromDate(fechaVencimiento) : null,
         // 'fechaRegistro' es la fecha de negocio (el cajero la puede elegir
@@ -189,8 +196,8 @@ class VentaRepository {
           'documentoCliente': documentoCliente.isEmpty ? 'N/A' : documentoCliente,
           'nombreCliente': nombreCliente,
           'numeroDocumento': numeroDocumento,
-          'montoTotal': totalAPagar,
-          'saldoPendiente': totalAPagar,
+          'montoTotal': totalRegistrado,
+          'saldoPendiente': totalRegistrado,
           'fechaRegistro': Timestamp.fromDate(fechaRegistro),
           'fechaVencimiento': Timestamp.fromDate(fechaVencimiento ?? fechaRegistro),
         });
@@ -254,7 +261,7 @@ class VentaRepository {
       montoCambio: montoCambio,
       subtotal: subtotal,
       impuesto: impuesto,
-      totalAPagar: totalAPagar,
+      totalAPagar: totalRegistrado,
       condicion: condicion,
       fechaVencimiento: fechaVencimiento,
       fechaRegistro: fechaRegistro,

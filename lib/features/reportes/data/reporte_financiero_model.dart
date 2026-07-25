@@ -1,3 +1,5 @@
+import '../../caja/data/cierre_caja_model.dart';
+
 /// Un producto dentro de un ranking (más vendido, más comprado o más
 /// rentable). El campo `monto` cambia de significado según el ranking en el
 /// que aparezca (ingreso, costo o ganancia) — lo interpreta quien arma la
@@ -20,6 +22,34 @@ class ProductoSinVenta {
   ProductoSinVenta({required this.idProducto, required this.nombreProducto, required this.stock, required this.valorInventario});
 }
 
+/// Línea de detalle (un servicio o producto dentro de una venta) que compone
+/// el resumen de Servicios vs. Productos: antes ese resumen solo mostraba el
+/// agregado del periodo sin poder ver "cuáles fueron" ni llegar al detalle
+/// de la venta que los contiene.
+class DetalleItemFinanciero {
+  final String idVenta;
+  final String numeroDocumento;
+  final DateTime? fecha;
+  final String cliente;
+  final String nombreItem;
+  final bool esServicio;
+  final double venta;
+  final double costo;
+
+  DetalleItemFinanciero({
+    required this.idVenta,
+    required this.numeroDocumento,
+    required this.fecha,
+    required this.cliente,
+    required this.nombreItem,
+    required this.esServicio,
+    required this.venta,
+    required this.costo,
+  });
+
+  double get utilidad => venta - costo;
+}
+
 /// Cuánto del negocio del periodo vino de servicios (cortes) vs. productos
 /// físicos: separado porque son dos negocios con márgenes muy distintos (un
 /// servicio normalmente no tiene costo de mercadería, o uno muy chico de
@@ -29,12 +59,14 @@ class ResumenServiciosProductos {
   final double costoServicios;
   final double ventasProductos;
   final double costoProductos;
+  final List<DetalleItemFinanciero> detalle;
 
   ResumenServiciosProductos({
     required this.ventasServicios,
     required this.costoServicios,
     required this.ventasProductos,
     required this.costoProductos,
+    this.detalle = const [],
   });
 
   double get utilidadServicios => ventasServicios - costoServicios;
@@ -172,6 +204,7 @@ class ReporteFinancieroData {
 
   final RecomendacionPago recomendacionPago;
   final BalanceGeneral balanceGeneral;
+  final List<CierreCajaModel> cierresCaja;
 
   ReporteFinancieroData({
     required this.inicio,
@@ -195,6 +228,7 @@ class ReporteFinancieroData {
     required this.abonosPorProveedor,
     required this.recomendacionPago,
     required this.balanceGeneral,
+    this.cierresCaja = const [],
   });
 
   double get margenBrutoPorcentaje => ventasPeriodo <= 0 ? 0 : (utilidadBruta / ventasPeriodo) * 100;

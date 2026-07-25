@@ -6,6 +6,8 @@ import '../../data/comision_model.dart';
 import '../../data/comision_repository.dart';
 import '../../../auth/providers/auth_provider.dart';
 import '../../../barberos/providers/barberos_provider.dart';
+import '../../../usuarios/providers/usuarios_provider.dart';
+import '../../../ventas/presentation/screens/detalle_venta_screen.dart';
 import '../../../../core/constants/roles.dart';
 import '../../../../core/utils/formato_moneda.dart';
 
@@ -20,7 +22,11 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
   late final TabController _tabController;
   DateTime _inicio = DateTime(DateTime.now().year, DateTime.now().month, 1);
   DateTime _fin = DateTime.now();
-  String? _idBarberoFiltro;
+  // El combo de filtro puede elegir un barbero o un usuario que no es
+  // barbero (para revisar si vendió productos): 'Barbero:<id>' o
+  // 'Usuario:<id>', partido en tipo/id para pasarlo al repositorio.
+  String? _tipoFiltro;
+  String? _idFiltro;
 
   List<ComisionCorteBarbero>? _cortes;
   List<ComisionProductoVendedor>? _productos;
@@ -36,7 +42,10 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    if (_esBarbero) _idBarberoFiltro = ref.read(authProvider).usuario?.idBarbero;
+    if (_esBarbero) {
+      _tipoFiltro = 'Barbero';
+      _idFiltro = ref.read(authProvider).usuario?.idBarbero;
+    }
     _cargar();
   }
 
@@ -55,7 +64,7 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
       final repo = ComisionRepository();
       final finInclusive = DateTime(_fin.year, _fin.month, _fin.day, 23, 59, 59);
       final inicioDelDia = DateTime(_inicio.year, _inicio.month, _inicio.day);
-      final resultado = await repo.obtenerComisionesDelPeriodo(inicioDelDia, finInclusive, idBarbero: _idBarberoFiltro);
+      final resultado = await repo.obtenerComisionesDelPeriodo(inicioDelDia, finInclusive, tipoFiltro: _tipoFiltro, idFiltro: _idFiltro);
       if (!mounted) return;
       setState(() {
         _cortes = resultado.cortes;
@@ -90,6 +99,100 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
         _fin = elegida;
       }
     });
+  }
+
+  void _verDetalleVenta(String idVenta) {
+    Navigator.of(context).push(
+      MaterialPageRoute(fullscreenDialog: true, builder: (context) => DetalleVentaScreen(ventaIdInicial: idVenta)),
+    );
+  }
+
+  // Lista los cortes individuales que componen el total de un barbero en el
+  // periodo elegido, cada uno navegable al detalle de su venta -pedido
+  // explícito: "que salga la lista de las ventas... y si lo toco salga ya
+  // el detalle de la venta".
+  void _verCortesDeBarbero(ComisionCorteBarbero corte) {
+    final formatoFecha = DateFormat('dd/MM/yyyy');
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(20),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
+                decoration: const BoxDecoration(color: Color(0xFF0F1B3D), borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        corte.nombreBarbero.isEmpty ? 'Cortes' : 'Cortes de ${corte.nombreBarbero}',
+                        style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white),
+                      ),
+                    ),
+                    IconButton(icon: const Icon(Icons.close, color: Colors.white, size: 20), onPressed: () => Navigator.pop(context)),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: corte.lineas.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text('No hay detalle disponible', style: GoogleFonts.poppins(color: Colors.grey.shade500)),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        itemCount: corte.lineas.length,
+                        separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
+                        itemBuilder: (context, i) {
+                          final l = corte.lineas[i];
+                          return InkWell(
+                            onTap: () {
+                              Navigator.pop(context);
+                              _verDetalleVenta(l.idVenta);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(l.nombreItem, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF1A1A1A))),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '${l.numeroDocumento} · ${l.cliente.isEmpty ? 'Consumidor final' : l.cliente} · ${l.fecha != null ? formatoFecha.format(l.fecha!) : '-'}',
+                                          style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(formatearMoneda(l.monto), style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade700)),
+                                      Text(formatearMoneda(l.comision), style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: FontWeight.w700, color: const Color(0xFF0F1B3D))),
+                                    ],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // Vista de la tabla/tarjetas a pantalla completa, para cuando hay muchos
@@ -259,27 +362,43 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
     );
   }
 
+  // Combina barberos y usuarios (que no son barberos) en un solo combo, para
+  // poder revisar tanto "cuánto lleva cortado" un barbero como "si un
+  // usuario vendió productos" sin dos selectores separados. El valor
+  // codifica tipo e id juntos ('Barbero:<id>' / 'Usuario:<id>').
   Widget _selectorBarbero() {
     final barberosAsync = ref.watch(barberosStreamProvider);
+    final usuariosAsync = ref.watch(usuariosStreamProvider);
+    final valorActual = _tipoFiltro == null ? null : '$_tipoFiltro:$_idFiltro';
     return Container(
       height: 46,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFB6BCC7))),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String?>(
-          value: _idBarberoFiltro,
+          value: valorActual,
           isExpanded: true,
-          hint: Text('Todos los barberos', style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade500)),
+          hint: Text('Todos', style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade500)),
           style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF1A1A1A)),
           items: [
-            const DropdownMenuItem<String?>(value: null, child: Text('Todos los barberos')),
-            ...(barberosAsync.value ?? []).map((b) => DropdownMenuItem<String?>(value: b.id, child: Text(b.nombreCompleto))),
+            const DropdownMenuItem<String?>(value: null, child: Text('Todos')),
+            ...(barberosAsync.value ?? []).map((b) => DropdownMenuItem<String?>(value: 'Barbero:${b.id}', child: Text('✂️ ${b.nombreCompleto}'))),
+            ...(usuariosAsync.value ?? []).where((u) => u.rol != Roles.barbero).map((u) => DropdownMenuItem<String?>(value: 'Usuario:${u.id}', child: Text('👤 ${u.nombreCompleto}'))),
           ],
-          // El cambio de barbero sí actualiza al toque: es un filtro simple
-          // (no una fecha que pida un diálogo aparte), no hace falta pasar
-          // por el botón Buscar para sentirse responsivo.
+          // El cambio sí actualiza al toque: es un filtro simple (no una
+          // fecha que pida un diálogo aparte), no hace falta pasar por el
+          // botón Buscar para sentirse responsivo.
           onChanged: (v) {
-            setState(() => _idBarberoFiltro = v);
+            setState(() {
+              if (v == null) {
+                _tipoFiltro = null;
+                _idFiltro = null;
+              } else {
+                final partes = v.split(':');
+                _tipoFiltro = partes[0];
+                _idFiltro = partes.sublist(1).join(':');
+              }
+            });
             _cargar();
           },
         ),
@@ -349,29 +468,40 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
   // ---------- Tarjetas para móvil (una card por persona, en vez de una
   // fila de tabla angosta con 4-5 columnas apretadas) ----------
 
-  Widget _tarjetaPersona({required String titulo, required List<(String, String)> filas, required String comision}) {
+  Widget _tarjetaPersona({required String titulo, required List<(String, String)> filas, required String comision, VoidCallback? onTap}) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(color: const Color(0xFFF8F9FB), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFE0E2E8))),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(titulo, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 14,
-            runSpacing: 4,
-            children: filas
-                .map((f) => Text.rich(TextSpan(children: [
-                      TextSpan(text: '${f.$1}: ', style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade500)),
-                      TextSpan(text: f.$2, style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
-                    ])))
-                .toList(),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(child: Text(titulo, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A)))),
+                  if (onTap != null) Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 14,
+                runSpacing: 4,
+                children: filas
+                    .map((f) => Text.rich(TextSpan(children: [
+                          TextSpan(text: '${f.$1}: ', style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade500)),
+                          TextSpan(text: f.$2, style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
+                        ])))
+                    .toList(),
+              ),
+              const SizedBox(height: 6),
+              Text('Comisión: $comision', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF0F1B3D))),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text('Comisión: $comision', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF0F1B3D))),
-        ],
+        ),
       ),
     );
   }
@@ -396,6 +526,7 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
                       titulo: c.nombreBarbero.isEmpty ? '-' : c.nombreBarbero,
                       filas: [('Cortes', c.cantidadCortes.toStringAsFixed(0)), ('Monto', formatearMoneda(c.montoTotal))],
                       comision: formatearMoneda(c.comisionTotal),
+                      onTap: () => _verCortesDeBarbero(c),
                     );
                   },
                 )
@@ -404,15 +535,18 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
                   separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
                   itemBuilder: (context, i) {
                     final c = lista[i];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      child: Row(
-                        children: [
-                          _celda(c.nombreBarbero.isEmpty ? '-' : c.nombreBarbero, 3, peso: FontWeight.w600),
-                          _celda(c.cantidadCortes.toStringAsFixed(0), 2, gris: true),
-                          _celda(formatearMoneda(c.montoTotal), 2, gris: true),
-                          _celda(formatearMoneda(c.comisionTotal), 2, peso: FontWeight.w700),
-                        ],
+                    return InkWell(
+                      onTap: () => _verCortesDeBarbero(c),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        child: Row(
+                          children: [
+                            _celda(c.nombreBarbero.isEmpty ? '-' : c.nombreBarbero, 3, peso: FontWeight.w600),
+                            _celda(c.cantidadCortes.toStringAsFixed(0), 2, gris: true),
+                            _celda(formatearMoneda(c.montoTotal), 2, gris: true),
+                            _celda(formatearMoneda(c.comisionTotal), 2, peso: FontWeight.w700),
+                          ],
+                        ),
                       ),
                     );
                   },
