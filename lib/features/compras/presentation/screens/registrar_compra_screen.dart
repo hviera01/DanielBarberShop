@@ -38,6 +38,14 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
   bool _datosExpandidos = false;
   bool _guardando = false;
 
+  // true mientras está abierto el diálogo de "ver la tabla más grande" (ver
+  // _expandirTablaProductos): esa tabla comparte los mismos
+  // TextEditingController/FocusNode que la de acá abajo, así que mientras
+  // tanto esta no monta sus filas (evita que dos TextField distintos se
+  // disputen el mismo FocusNode a la vez).
+  bool _tablaExpandida = false;
+  void Function(void Function())? _refrescarDialogoExpandido;
+
   final Map<int, TextEditingController> _ctrlCantidad = {};
   final Map<int, TextEditingController> _ctrlPrecio = {};
   final Map<int, TextEditingController> _ctrlDescuento = {};
@@ -335,6 +343,10 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
   @override
   Widget build(BuildContext context) {
     final carrito = ref.watch(carritoCompraProvider);
+    // Si el diálogo de "ver la tabla más grande" está abierto, le pide que
+    // se vuelva a pintar con los datos ya leídos por este `ref` cada vez que
+    // el carrito cambia (ver _expandirTablaProductos).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refrescarDialogoExpandido?.call(() {}));
 
     return Container(
       color: const Color(0xFFF2F3F7),
@@ -715,6 +727,13 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
               : Row(
                   children: [
                     Text('Productos en la compra', style: GoogleFonts.poppins(fontSize: 14.5, fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 6),
+                    IconButton(
+                      tooltip: 'Ver la tabla más grande',
+                      onPressed: _expandirTablaProductos,
+                      icon: const Icon(Icons.open_in_full, size: 18),
+                      color: Colors.grey.shade600,
+                    ),
                     const Spacer(),
                     FilledButton.icon(
                       onPressed: _agregarProductoDesdeBusqueda,
@@ -752,6 +771,16 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
                 ],
               ],
             )
+          else if (_tablaExpandida)
+            // Ver el comentario de _tablaExpandida: mientras el diálogo de
+            // "ver más grande" está abierto, esta tabla no monta sus filas
+            // (esas mismas filas ya están montadas allá, usando los mismos
+            // controladores).
+            Expanded(
+              child: Center(
+                child: Text('Viendo la tabla ampliada…', style: GoogleFonts.poppins(color: Colors.grey.shade400)),
+              ),
+            )
           else
             Expanded(
               child: ListView.separated(
@@ -760,6 +789,126 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
                 itemBuilder: (context, i) => _filaCarritoTabla(i, carrito.items[i], mapaProductos),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  // Muestra la tabla de productos sola, casi a pantalla completa, para
+  // cuando hay varios items y la vista normal se queda chica. El diálogo lee
+  // el carrito con el `ref` de esta pantalla (ref.read) en vez de
+  // watch/Consumer propio, porque showDialog lo inserta con el Navigator
+  // raíz, fuera del ProviderScope por pestaña.
+  void _expandirTablaProductos() {
+    setState(() => _tablaExpandida = true);
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        final tamano = MediaQuery.of(dialogContext).size;
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(8),
+          child: Container(
+            width: tamano.width - 16,
+            height: tamano.height - 16,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+            child: StatefulBuilder(
+              builder: (context, setDialogState) {
+                _refrescarDialogoExpandido = setDialogState;
+                final carrito = ref.read(carritoCompraProvider);
+                final productos = ref.read(productosStreamProvider).value ?? [];
+                final mapaProductos = {for (final p in productos) p.id: p};
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text('Productos en la compra', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w700)),
+                        const SizedBox(width: 14),
+                        OutlinedButton.icon(
+                          onPressed: _agregarProductoDesdeBusqueda,
+                          icon: const Icon(Icons.add, size: 18),
+                          label: Text('Agregar Producto', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF1A1A1A),
+                            side: const BorderSide(color: Color(0xFFB6BCC7)),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(tooltip: 'Cerrar', icon: const Icon(Icons.close), onPressed: () => Navigator.pop(dialogContext)),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    _encabezadoTablaCarrito(),
+                    Divider(height: 18, color: Colors.grey.shade300),
+                    Expanded(
+                      child: carrito.items.isEmpty
+                          ? Center(
+                              child: Text('Todavía no agregaste productos.', style: GoogleFonts.poppins(color: Colors.grey.shade500)),
+                            )
+                          : ListView.separated(
+                              itemCount: carrito.items.length,
+                              separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
+                              itemBuilder: (context, i) => _filaCarritoTabla(i, carrito.items[i], mapaProductos),
+                            ),
+                    ),
+                    const SizedBox(height: 10),
+                    _barraTotalesCompacta(carrito),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    ).then((_) {
+      _refrescarDialogoExpandido = null;
+      if (mounted) setState(() => _tablaExpandida = false);
+    });
+  }
+
+  // Versión chica de los totales + botón de confirmar, solo para la tabla
+  // expandida: una sola fila delgada, para que la tabla se quede con casi
+  // todo el espacio, que es para lo que se abrió este diálogo.
+  Widget _barraTotalesCompacta(CarritoCompraState carrito) {
+    Widget total(String etiqueta, double valor, {bool destacado = false}) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(etiqueta.toUpperCase(), style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.grey.shade500, letterSpacing: 0.3)),
+          Text(
+            formatearMoneda(valor),
+            style: GoogleFonts.poppins(fontSize: destacado ? 15 : 12.5, fontWeight: FontWeight.w800, color: destacado ? const Color(0xFF0F1B3D) : const Color(0xFF1A1A1A)),
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(color: const Color(0xFFF2F3F7), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        children: [
+          total('Subtotal', carrito.subtotal),
+          const SizedBox(width: 20),
+          total('ISV', carrito.impuesto),
+          const SizedBox(width: 20),
+          total('Total a pagar', carrito.totalAPagar, destacado: true),
+          const Spacer(),
+          SizedBox(
+            height: 38,
+            child: FilledButton(
+              onPressed: _guardando ? null : _confirmarCompra,
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF1A1A1A), padding: const EdgeInsets.symmetric(horizontal: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+              child: _guardando
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Text('Registrar Compra', style: GoogleFonts.poppins(fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.white)),
+            ),
+          ),
         ],
       ),
     );
