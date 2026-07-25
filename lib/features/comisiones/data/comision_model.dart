@@ -57,6 +57,7 @@ class ComisionProductoVendedor {
   final double montoTotal;
   final double tasa;
   final double comisionTotal;
+  final List<LineaComisionVenta> lineas;
 
   ComisionProductoVendedor({
     required this.tipo,
@@ -66,5 +67,6 @@ class ComisionProductoVendedor {
     required this.montoTotal,
     required this.tasa,
     required this.comisionTotal,
+    this.lineas = const [],
   });
 }

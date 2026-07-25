@@ -14,14 +14,6 @@ import '../../ventas_credito/data/venta_credito_repository.dart';
 import '../../ventas_credito/data/abono_model.dart';
 import '../../caja/data/cierre_caja_repository.dart';
 
-/// Cuánto del efectivo estimado se sugiere reservar como colchón de
-/// seguridad antes de recomendar pagos a proveedores.
-const _colchonSeguridadPorcentaje = 0.20;
-
-/// Porcentaje del efectivo cobrado en el periodo que, como referencia
-/// alternativa, se sugiere destinar a pagos a proveedores.
-const _porcentajeVentasParaProveedores = 0.35;
-
 const _topN = 10;
 
 /// Detalle de ventas/compras agrupado por id de documento padre, resuelto
@@ -196,8 +188,6 @@ class ReporteFinancieroRepository {
     final comprasCreditoFuture = _db.collection('comprasCredito').where('saldoPendiente', isGreaterThan: 0).get();
     final serieMensualFuture = _obtenerSerieMensual();
     final efectivoEstimadoFuture = _efectivoEstimado();
-    final hace3Meses = DateTime(DateTime.now().year, DateTime.now().month - 2, 1);
-    final egresosUltimos3MesesFuture = _egresoRepository.obtenerEgresosPorRango(hace3Meses, DateTime.now());
     final cierresCajaFuture = _cierreCajaRepository.obtenerCierresPorRango(inicio, finInclusive);
 
     final ventasHeaders = await ventasHeadersFuture;
@@ -211,7 +201,6 @@ class ReporteFinancieroRepository {
     final comprasCreditoSnap = await comprasCreditoFuture;
     final serieMensual = await serieMensualFuture;
     final efectivoEstimado = await efectivoEstimadoFuture;
-    final egresosUltimos3Meses = await egresosUltimos3MesesFuture;
     final cierresCaja = await cierresCajaFuture;
 
     final ventasValidas = ventasHeaders.where((v) => v.esActiva && !v.esCotizacion).toList();
@@ -296,19 +285,6 @@ class ReporteFinancieroRepository {
     final totalAbonosComprasCredito = abonosCompra.fold<double>(0, (s, a) => s + a.montoAbonado);
     final abonosPorProveedor = _agruparAbonosPorProveedor(abonosCompra);
 
-    final reservaGastosFijos = egresosUltimos3Meses.fold<double>(0, (s, e) => s + e.monto) / 3;
-    final colchon = efectivoEstimado * _colchonSeguridadPorcentaje;
-    final sugeridoPorCaja = (efectivoEstimado - reservaGastosFijos - colchon).clamp(0, double.infinity).toDouble();
-    final sugeridoPorVentas = flujoEfectivo.ingresosEfectivo * _porcentajeVentasParaProveedores;
-
-    final recomendacionPago = RecomendacionPago(
-      efectivoEstimado: efectivoEstimado,
-      reservaGastosFijos: reservaGastosFijos,
-      sugeridoPorCaja: sugeridoPorCaja,
-      ingresoEfectivoCobrado: flujoEfectivo.ingresosEfectivo,
-      sugeridoPorVentas: sugeridoPorVentas,
-    );
-
     final cuentasPorCobrar = ventasCreditoSnap.docs.fold<double>(0, (s, d) => s + ((d.data()['saldoPendiente'] ?? 0) as num).toDouble().clamp(0, double.infinity));
     final cuentasPorPagar = comprasCreditoSnap.docs.fold<double>(0, (s, d) => s + ((d.data()['saldoPendiente'] ?? 0) as num).toDouble().clamp(0, double.infinity));
 
@@ -339,7 +315,6 @@ class ReporteFinancieroRepository {
       resumenServiciosProductos: resumenServiciosProductos,
       totalAbonosComprasCredito: totalAbonosComprasCredito,
       abonosPorProveedor: abonosPorProveedor,
-      recomendacionPago: recomendacionPago,
       balanceGeneral: balanceGeneral,
       cierresCaja: cierresCaja,
     );

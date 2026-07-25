@@ -134,24 +134,6 @@ class FlujoEfectivo {
   double get neto => totalIngresos - totalEgresos;
 }
 
-/// Sugerencias de cuánto destinar a pagos a proveedores sin comprometer el
-/// flujo del negocio. Son referencias, no reglas — ver notas en la pantalla.
-class RecomendacionPago {
-  final double efectivoEstimado;
-  final double reservaGastosFijos;
-  final double sugeridoPorCaja;
-  final double ingresoEfectivoCobrado;
-  final double sugeridoPorVentas;
-
-  RecomendacionPago({
-    required this.efectivoEstimado,
-    required this.reservaGastosFijos,
-    required this.sugeridoPorCaja,
-    required this.ingresoEfectivoCobrado,
-    required this.sugeridoPorVentas,
-  });
-}
-
 /// Balance general simplificado: no reemplaza un balance contable formal (no
 /// hay partida doble, activos fijos ni capital aportado en el sistema). El
 /// patrimonio es el residuo Activos − Pasivos, no una cuenta llevada aparte.
@@ -202,7 +184,6 @@ class ReporteFinancieroData {
   final double totalAbonosComprasCredito;
   final List<AbonoPorProveedor> abonosPorProveedor;
 
-  final RecomendacionPago recomendacionPago;
   final BalanceGeneral balanceGeneral;
   final List<CierreCajaModel> cierresCaja;
 
@@ -226,7 +207,6 @@ class ReporteFinancieroData {
     required this.resumenServiciosProductos,
     required this.totalAbonosComprasCredito,
     required this.abonosPorProveedor,
-    required this.recomendacionPago,
     required this.balanceGeneral,
     this.cierresCaja = const [],
   });

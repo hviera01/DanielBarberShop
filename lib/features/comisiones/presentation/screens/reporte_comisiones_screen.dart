@@ -107,15 +107,18 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
     );
   }
 
-  // Lista los cortes individuales que componen el total de un barbero en el
-  // periodo elegido, cada uno navegable al detalle de su venta -pedido
-  // explícito: "que salga la lista de las ventas... y si lo toco salga ya
-  // el detalle de la venta".
-  void _verCortesDeBarbero(ComisionCorteBarbero corte) {
+  // Lista las líneas individuales (cortes o ventas de producto) que
+  // componen el total de un barbero/vendedor en el periodo elegido, cada
+  // una navegable al detalle de su venta -pedido explícito: "que salga la
+  // lista de las ventas... y si lo toco salga ya el detalle de la venta".
+  // El detalle de venta se apila SOBRE este diálogo (no lo cierra antes de
+  // navegar) para que al volver del detalle la lista siga abierta, en vez
+  // de caer directo a la pantalla de Comisiones.
+  void _verLineas(String titulo, List<LineaComisionVenta> lineas) {
     final formatoFecha = DateFormat('dd/MM/yyyy');
     showDialog(
       context: context,
-      builder: (context) => Dialog(
+      builder: (dialogContext) => Dialog(
         insetPadding: const EdgeInsets.all(20),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
@@ -128,17 +131,14 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        corte.nombreBarbero.isEmpty ? 'Cortes' : 'Cortes de ${corte.nombreBarbero}',
-                        style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white),
-                      ),
+                      child: Text(titulo, style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
                     ),
-                    IconButton(icon: const Icon(Icons.close, color: Colors.white, size: 20), onPressed: () => Navigator.pop(context)),
+                    IconButton(icon: const Icon(Icons.close, color: Colors.white, size: 20), onPressed: () => Navigator.pop(dialogContext)),
                   ],
                 ),
               ),
               Flexible(
-                child: corte.lineas.isEmpty
+                child: lineas.isEmpty
                     ? Padding(
                         padding: const EdgeInsets.all(24),
                         child: Text('No hay detalle disponible', style: GoogleFonts.poppins(color: Colors.grey.shade500)),
@@ -146,15 +146,12 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
                     : ListView.separated(
                         shrinkWrap: true,
                         padding: const EdgeInsets.symmetric(vertical: 6),
-                        itemCount: corte.lineas.length,
+                        itemCount: lineas.length,
                         separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
                         itemBuilder: (context, i) {
-                          final l = corte.lineas[i];
+                          final l = lineas[i];
                           return InkWell(
-                            onTap: () {
-                              Navigator.pop(context);
-                              _verDetalleVenta(l.idVenta);
-                            },
+                            onTap: () => _verDetalleVenta(l.idVenta),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                               child: Row(
@@ -526,7 +523,7 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
                       titulo: c.nombreBarbero.isEmpty ? '-' : c.nombreBarbero,
                       filas: [('Cortes', c.cantidadCortes.toStringAsFixed(0)), ('Monto', formatearMoneda(c.montoTotal))],
                       comision: formatearMoneda(c.comisionTotal),
-                      onTap: () => _verCortesDeBarbero(c),
+                      onTap: () => _verLineas(c.nombreBarbero.isEmpty ? 'Cortes' : 'Cortes de ${c.nombreBarbero}', c.lineas),
                     );
                   },
                 )
@@ -536,7 +533,7 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
                   itemBuilder: (context, i) {
                     final c = lista[i];
                     return InkWell(
-                      onTap: () => _verCortesDeBarbero(c),
+                      onTap: () => _verLineas(c.nombreBarbero.isEmpty ? 'Cortes' : 'Cortes de ${c.nombreBarbero}', c.lineas),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         child: Row(
@@ -577,6 +574,7 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
                       titulo: '${c.nombre} (${c.tipo})',
                       filas: [('Productos', c.cantidadProductos.toStringAsFixed(0)), ('Monto', formatearMoneda(c.montoTotal)), ('Tasa', '${(c.tasa * 100).toStringAsFixed(0)}%')],
                       comision: formatearMoneda(c.comisionTotal),
+                      onTap: () => _verLineas('Productos vendidos por ${c.nombre}', c.lineas),
                     );
                   },
                 )
@@ -585,16 +583,19 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
                   separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
                   itemBuilder: (context, i) {
                     final c = lista[i];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      child: Row(
-                        children: [
-                          _celda('${c.nombre} (${c.tipo})', 3, peso: FontWeight.w600),
-                          _celda(c.cantidadProductos.toStringAsFixed(0), 2, gris: true),
-                          _celda(formatearMoneda(c.montoTotal), 2, gris: true),
-                          _celda('${(c.tasa * 100).toStringAsFixed(0)}%', 1, gris: true),
-                          _celda(formatearMoneda(c.comisionTotal), 2, peso: FontWeight.w700),
-                        ],
+                    return InkWell(
+                      onTap: () => _verLineas('Productos vendidos por ${c.nombre}', c.lineas),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        child: Row(
+                          children: [
+                            _celda('${c.nombre} (${c.tipo})', 3, peso: FontWeight.w600),
+                            _celda(c.cantidadProductos.toStringAsFixed(0), 2, gris: true),
+                            _celda(formatearMoneda(c.montoTotal), 2, gris: true),
+                            _celda('${(c.tasa * 100).toStringAsFixed(0)}%', 1, gris: true),
+                            _celda(formatearMoneda(c.comisionTotal), 2, peso: FontWeight.w700),
+                          ],
+                        ),
                       ),
                     );
                   },

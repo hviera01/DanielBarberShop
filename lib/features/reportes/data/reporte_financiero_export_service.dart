@@ -37,7 +37,6 @@ class ReporteFinancieroExportService {
           _seccionProductosSinVenta(data),
           _seccionVentasPorUsuario(data),
           _seccionAbonos(data),
-          _seccionRecomendacion(data),
           _seccionBalance(data),
         ],
       ),
@@ -217,29 +216,6 @@ class ReporteFinancieroExportService {
           pw.SizedBox(height: 6),
           _tabla(['Proveedor', 'Total abonado'], [for (final a in data.abonosPorProveedor) [a.proveedor, formatearMoneda(a.total)]]),
         ],
-      ],
-    );
-  }
-
-  pw.Widget _seccionRecomendacion(ReporteFinancieroData data) {
-    final r = data.recomendacionPago;
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        _titulo('Recomendación de Pago a Proveedores'),
-        pw.Text('Son referencias, no reglas fijas.', style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700)),
-        pw.SizedBox(height: 6),
-        _filaValor('Sugerido según caja disponible', r.sugeridoPorCaja),
-        pw.Text(
-          'Efectivo estimado (${formatearMoneda(r.efectivoEstimado)}) menos reserva de gastos fijos (${formatearMoneda(r.reservaGastosFijos)}) menos colchón de seguridad del 20%.',
-          style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700),
-        ),
-        pw.SizedBox(height: 6),
-        _filaValor('Sugerido según ventas cobradas', r.sugeridoPorVentas),
-        pw.Text(
-          '35% de lo cobrado en efectivo en el rango seleccionado (${formatearMoneda(r.ingresoEfectivoCobrado)}).',
-          style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700),
-        ),
       ],
     );
   }

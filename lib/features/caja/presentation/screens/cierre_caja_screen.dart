@@ -83,18 +83,21 @@ class _CierreCajaScreenState extends ConsumerState<CierreCajaScreen> {
     }
   }
 
+  // Solo corrige el monto inicial usado en el cálculo del periodo actual:
+  // antes esto guardaba _fechaFin (típicamente "ahora") como el nuevo
+  // fechaDesde, lo que en la práctica actuaba como un mini-cierre -los
+  // ingresos/egresos de todo lo transcurrido antes de ese momento dejaban
+  // de contarse, aunque la caja nunca se hubiera cerrado de verdad-. El
+  // periodo (fechaInicio) solo debe cambiar al cerrar caja de verdad (ver
+  // _cerrarCaja) o si el usuario lo edita a mano (ver _campoFechaHora).
   Future<void> _guardarMontoInicial() async {
     if (_montoInicialController.text.trim().isEmpty) {
       _mostrarMensaje('Ingresá el monto inicial', esError: true);
       return;
     }
     final usuario = ref.read(authProvider).usuario?.nombreCompleto ?? 'Sistema';
-    await ref.read(cierreCajaRepositoryProvider).guardarMontoInicial(_fechaFin, _montoInicial, usuario);
+    await ref.read(cierreCajaRepositoryProvider).guardarMontoInicial(_fechaInicio, _montoInicial, usuario);
     _mostrarMensaje('Monto inicial guardado correctamente');
-    setState(() {
-      _fechaInicio = _fechaFin;
-      _totalRealController.clear();
-    });
     await _recalcular();
   }
 
@@ -223,10 +226,25 @@ class _CierreCajaScreenState extends ConsumerState<CierreCajaScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Cierre de Caja', style: GoogleFonts.poppins(fontSize: esMovil ? 19 : 22, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Text(
-                        'Periodo: ${formatoFecha.format(_fechaInicio)}  →  ${formatoFecha.format(_fechaFin)}',
-                        style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade600),
+                        'El periodo se ajusta solo al abrir la pantalla; tocá una fecha para corregirlo manualmente si hace falta.',
+                        style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade500),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          _campoFechaHora('Desde', _fechaInicio, (v) {
+                            setState(() => _fechaInicio = v);
+                            _recalcular();
+                          }, formatoFecha),
+                          _campoFechaHora('Hasta', _fechaFin, (v) {
+                            setState(() => _fechaFin = v);
+                            _recalcular();
+                          }, formatoFecha),
+                        ],
                       ),
                       const SizedBox(height: 20),
                       Wrap(
@@ -369,6 +387,33 @@ class _CierreCajaScreenState extends ConsumerState<CierreCajaScreen> {
         ],
       ),
     );
+  }
+
+  Widget _campoFechaHora(String etiqueta, DateTime valor, ValueChanged<DateTime> onChanged, DateFormat formato) {
+    return InkWell(
+      onTap: () => _elegirFechaHora(valor, onChanged),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFB6BCC7))),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.event_outlined, size: 16, color: Colors.grey.shade500),
+            const SizedBox(width: 8),
+            Text('$etiqueta: ${formato.format(valor)}', style: GoogleFonts.poppins(fontSize: 12.5)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _elegirFechaHora(DateTime actual, ValueChanged<DateTime> onChanged) async {
+    final fecha = await showDatePicker(context: context, initialDate: actual, firstDate: DateTime(2020), lastDate: DateTime.now().add(const Duration(days: 1)));
+    if (fecha == null || !mounted) return;
+    final hora = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(actual));
+    if (hora == null) return;
+    onChanged(DateTime(fecha.year, fecha.month, fecha.day, hora.hour, hora.minute));
   }
 
   Widget _filaMonto(String etiqueta, double valor, {bool negrita = false, Color? color}) {

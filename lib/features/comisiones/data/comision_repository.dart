@@ -144,21 +144,24 @@ class ComisionRepository {
     return _calcularProductos(lineas, tipo: tipo, id: id);
   }
 
-  List<ComisionProductoVendedor> _calcularProductos(List<_LineaDetalle> lineas, {String? tipo, String? id}) {
-    final productos = lineas.map((l) => l.item).where((i) => !i.esServicio && i.vendidoPorTipo != 'N/A' && i.vendidoPorId.isNotEmpty).where((i) {
-      if (tipo != null && i.vendidoPorTipo != tipo) return false;
-      if (id != null && i.vendidoPorId != id) return false;
+  List<ComisionProductoVendedor> _calcularProductos(List<_LineaDetalle> lineasDetalle, {String? tipo, String? id}) {
+    final productos = lineasDetalle.where((l) => !l.item.esServicio && l.item.vendidoPorTipo != 'N/A' && l.item.vendidoPorId.isNotEmpty).where((l) {
+      if (tipo != null && l.item.vendidoPorTipo != tipo) return false;
+      if (id != null && l.item.vendidoPorId != id) return false;
       return true;
     });
 
     final cantidadPorClave = <String, double>{};
     final montoPorClave = <String, double>{};
     final infoPorClave = <String, (String tipo, String id, String nombre)>{};
-    for (final item in productos) {
+    final detallePorClave = <String, List<_LineaDetalle>>{};
+    for (final l in productos) {
+      final item = l.item;
       final clave = '${item.vendidoPorTipo}:${item.vendidoPorId}';
       cantidadPorClave[clave] = (cantidadPorClave[clave] ?? 0) + item.cantidad;
       montoPorClave[clave] = (montoPorClave[clave] ?? 0) + item.subtotal;
       infoPorClave[clave] = (item.vendidoPorTipo, item.vendidoPorId, item.vendidoPorNombre);
+      detallePorClave.putIfAbsent(clave, () => []).add(l);
     }
 
     final lista = cantidadPorClave.keys.map((clave) {
@@ -166,6 +169,21 @@ class ComisionRepository {
       final cantidad = cantidadPorClave[clave]!;
       final monto = montoPorClave[clave]!;
       final tasa = tasaComisionProducto(cantidad);
+      // La comisión por línea se calcula recién acá (no al armar
+      // detallePorClave) porque la tasa depende del volumen total del
+      // vendedor en el periodo, que solo se conoce una vez sumadas todas
+      // sus líneas.
+      final lineasComision = detallePorClave[clave]!
+          .map((l) => LineaComisionVenta(
+                idVenta: l.idVenta,
+                numeroDocumento: l.numeroDocumento,
+                fecha: l.fecha,
+                cliente: l.cliente,
+                nombreItem: l.item.nombreProducto,
+                monto: l.item.subtotal,
+                comision: l.item.subtotal * tasa,
+              ))
+          .toList();
       return ComisionProductoVendedor(
         tipo: info.$1,
         id: info.$2,
@@ -174,6 +192,7 @@ class ComisionRepository {
         montoTotal: monto,
         tasa: tasa,
         comisionTotal: monto * tasa,
+        lineas: lineasComision,
       );
     }).toList();
     lista.sort((a, b) => b.montoTotal.compareTo(a.montoTotal));
