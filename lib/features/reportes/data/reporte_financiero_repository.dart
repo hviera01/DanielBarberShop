@@ -146,7 +146,16 @@ class ReporteFinancieroRepository {
     }
 
     for (final v in ventasContado) {
-      sumarIngreso(v.metodoPago, v.totalAPagar);
+      // Una venta con pago mixto no cae en un solo balde de efectivo/tarjeta/
+      // transferencia (ver EgresoRepository.obtenerLibroFinanciero): se
+      // reparte en un ingreso por cada método, con su propio monto.
+      if (v.metodoPago == 'Mixto' && v.pagosMixtos.isNotEmpty) {
+        for (final pago in v.pagosMixtos) {
+          sumarIngreso(pago.metodoPago, pago.monto);
+        }
+      } else {
+        sumarIngreso(v.metodoPago, v.totalAPagar);
+      }
     }
     for (final c in comprasContado) {
       sumarEgreso(c.metodoPago, c.montoTotal);

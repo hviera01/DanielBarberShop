@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/item_venta_model.dart';
+import '../data/pago_detalle_model.dart';
 import '../data/venta_en_espera_model.dart';
 import '../data/venta_model.dart';
 import '../../productos/data/producto_model.dart';
@@ -57,6 +58,9 @@ class CarritoVentaState {
   // campo (a diferencia del sistema viejo, que sobreescribía el total
   // registrado con el neto).
   final double porcentajeTarjeta;
+  // Desglose cuando metodoPago == 'Mixto' (ver PagoMixtoDialog). Vacío en
+  // cualquier otro método.
+  final List<PagoDetalle> pagosMixtos;
 
   CarritoVentaState({
     this.idEnEspera,
@@ -75,11 +79,13 @@ class CarritoVentaState {
     this.cambio = 0,
     this.descuentoGlobalPorcentaje = 0,
     this.porcentajeTarjeta = 0,
+    this.pagosMixtos = const [],
   }) : fecha = fecha ?? DateTime.now();
 
   bool get esCotizacion => tipoDocumento == 'Cotizacion';
   bool get esVentaSinFacturar => tipoDocumento == 'Venta';
   bool get esCredito => condicion == 'Credito';
+  bool get esPagoMixto => metodoPago == 'Mixto';
 
   // Este negocio no cobra ISV de verdad: los datos reales migrados de
   // DB_BARBERIA mostraban un 15% "calculado" en el sistema viejo que no
@@ -136,6 +142,7 @@ class CarritoVentaState {
     double? cambio,
     double? descuentoGlobalPorcentaje,
     double? porcentajeTarjeta,
+    List<PagoDetalle>? pagosMixtos,
   }) {
     return CarritoVentaState(
       idEnEspera: idEnEspera == _sinCambio ? this.idEnEspera : idEnEspera as String?,
@@ -154,6 +161,7 @@ class CarritoVentaState {
       cambio: cambio ?? this.cambio,
       descuentoGlobalPorcentaje: descuentoGlobalPorcentaje ?? this.descuentoGlobalPorcentaje,
       porcentajeTarjeta: porcentajeTarjeta ?? this.porcentajeTarjeta,
+      pagosMixtos: pagosMixtos ?? this.pagosMixtos,
     );
   }
 }
@@ -262,12 +270,21 @@ class CarritoVentaNotifier extends Notifier<CarritoVentaState> {
       condicion: v,
       metodoPago: v == 'Credito' ? '' : 'Efectivo',
       fechaVencimiento: v == 'Credito' ? (state.fechaVencimiento ?? DateTime.now().add(const Duration(days: 30))) : null,
+      pagosMixtos: const [],
     );
   }
 
   void establecerMetodoPago(String v) {
-    state = state.copyWith(metodoPago: v, porcentajeTarjeta: v == 'Tarjeta' ? state.porcentajeTarjeta : 0);
+    state = state.copyWith(
+      metodoPago: v,
+      porcentajeTarjeta: v == 'Tarjeta' ? state.porcentajeTarjeta : 0,
+      pagosMixtos: v == 'Mixto' ? state.pagosMixtos : const [],
+    );
   }
+
+  /// Guarda el desglose confirmado en PagoMixtoDialog. No cambia metodoPago:
+  /// eso ya se hizo al elegir "Mixto" en el dropdown.
+  void establecerPagosMixtos(List<PagoDetalle> pagos) => state = state.copyWith(pagosMixtos: pagos);
   void establecerCliente({required String documento, required String nombre}) {
     state = state.copyWith(documentoCliente: documento, nombreCliente: nombre);
   }
