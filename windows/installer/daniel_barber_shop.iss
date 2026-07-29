@@ -14,7 +14,7 @@
 ; ActualizacionService y version_app.dart-.
 
 #define MyAppName "Daniel's Barber Shop"
-#define MyAppVersion "11"
+#define MyAppVersion "12"
 #define MyAppExeName "sistema_ventas.exe"
 #define MyReleaseDir "..\..\build\windows\x64\runner\Release"
 
