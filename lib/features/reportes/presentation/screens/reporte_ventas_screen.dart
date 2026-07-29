@@ -56,7 +56,10 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
   void initState() {
     super.initState();
     final ahora = DateTime.now();
-    _fechaInicio = DateTime(ahora.year, ahora.month, 1);
+    // Rango de 12 meses en vez de "solo este mes": ver el mismo comentario en
+    // ReporteComprasScreen — arrancar tan angosto dejaba el reporte vacío la
+    // mayoría de las veces al abrirlo por primera vez.
+    _fechaInicio = DateTime(ahora.year - 1, ahora.month, ahora.day);
     _fechaFin = DateTime(ahora.year, ahora.month, ahora.day);
     _buscar();
   }

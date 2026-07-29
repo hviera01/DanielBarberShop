@@ -27,7 +27,7 @@ class VentaRepository {
 
   String _formatearCorrelativo(String tipoDocumento, int numero) {
     if (tipoDocumento == 'Venta') {
-      return numero.toString().padLeft(4, '0');
+      return numero.toString().padLeft(5, '0');
     }
     return numero.toString().padLeft(8, '0');
   }
@@ -358,7 +358,7 @@ class VentaRepository {
   /// Busca ventas por número de documento sin que el usuario tenga que
   /// escribir los ceros de relleno (por ejemplo "5" en vez de "00000005"):
   /// arma las variantes rellenadas posibles -8 dígitos para Factura/Boleta/
-  /// Cotización, 4 para Venta Sin Facturar (ver _formatearCorrelativo)- y
+  /// Cotización, 5 para Venta Sin Facturar (ver _formatearCorrelativo)- y
   /// las busca todas. Si se indica [tipoDocumento] filtra además por ese
   /// tipo: hace falta porque Factura/Boleta y Cotización usan contadores
   /// separados pero el mismo relleno de 8 dígitos, así que un mismo número
@@ -372,6 +372,7 @@ class VentaRepository {
     final candidatos = <String>{limpio};
     if (RegExp(r'^\d+$').hasMatch(limpio)) {
       candidatos.add(limpio.padLeft(8, '0'));
+      candidatos.add(limpio.padLeft(5, '0'));
       candidatos.add(limpio.padLeft(4, '0'));
     }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,7 @@ import '../../../proveedores/data/proveedor_model.dart';
 import '../../../proveedores/providers/proveedores_provider.dart';
 import '../../../../core/providers/tabs_provider.dart';
 import '../../../../core/utils/formato_moneda.dart';
+import '../../../ventas/presentation/widgets/teclado_numerico_dialog.dart';
 import '../widgets/buscar_producto_compra_dialog.dart';
 import 'detalle_compra_screen.dart';
 
@@ -56,6 +58,13 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
   final Map<String, FocusNode> _focusInline = {};
   final Map<String, VoidCallback> _confirmarInline = {};
   int _conteoItemsControladores = -1;
+
+  // Campo invisible (ver _campoEscapeTeclado) al que se le pide el foco al
+  // cerrar el diálogo del teclado numérico en escritorio: sin esto, Flutter
+  // le devuelve el foco al campo que lo tenía antes de abrir el diálogo
+  // -el mismo que se acaba de "arreglar"- y reselecciona su texto entero.
+  // Mismo patrón que _focusCodigoBarras en RegistrarVentaScreen.
+  final _focusEscapeTeclado = FocusNode();
 
   @override
   void initState() {
@@ -121,6 +130,7 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
     for (final f in _focusInline.values) {
       f.dispose();
     }
+    _focusEscapeTeclado.dispose();
     super.dispose();
   }
 
@@ -359,6 +369,7 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Offstage(offstage: true, child: _campoEscapeTeclado()),
                 _encabezado(esMovil),
                 const SizedBox(height: 14),
                 _tarjetaDatosCompra(carrito, esMovil),
@@ -942,17 +953,14 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
   // así siempre usa el [valorActual]/[alConfirmar] vigentes en vez de quedar
   // atado a los del primer build (que sería el bug si el listener capturara
   // esos parámetros directamente).
+  // Campo invisible al que se le pide el foco al cerrar el diálogo del
+  // teclado numérico en escritorio (ver _focusEscapeTeclado).
+  Widget _campoEscapeTeclado() {
+    return TextField(focusNode: _focusEscapeTeclado);
+  }
+
   Widget _campoInlineNumero(String claveFoco, TextEditingController controlador, double valorActual, void Function(double) alConfirmar, {String? sufijo, String? prefijo, bool dosDecimales = false}) {
-    void confirmar() {
-      final valor = double.tryParse(controlador.text.replaceAll(',', '').trim());
-      if (valor == null) return;
-      if ((valor - valorActual).abs() >= 0.005) alConfirmar(valor);
-      // Un número cerrado (ej. "150") queda mostrado con los decimales
-      // (150.00) para que se vea igual de prolijo que el resto de los
-      // montos de la pantalla, sin importar si el valor cambió o no.
-      if (dosDecimales) controlador.text = valor.toStringAsFixed(2);
-    }
-    _confirmarInline[claveFoco] = confirmar;
+    final esMovil = defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
 
     final focusNode = _focusInline.putIfAbsent(claveFoco, () {
       final node = FocusNode();
@@ -961,6 +969,38 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
       });
       return node;
     });
+
+    void confirmar() {
+      final valor = double.tryParse(controlador.text.replaceAll(',', '').trim());
+      if (valor == null) return;
+      if ((valor - valorActual).abs() >= 0.005) alConfirmar(valor);
+      // Un número cerrado (ej. "150") queda mostrado con los decimales
+      // (150.00) para que se vea igual de prolijo que el resto de los
+      // montos de la pantalla, sin importar si el valor cambió o no.
+      if (dosDecimales) controlador.text = valor.toStringAsFixed(2);
+      if (esMovil) {
+        if (focusNode.hasFocus) focusNode.unfocus();
+      } else {
+        // Ver _focusEscapeTeclado: evita que Flutter reseleccione este
+        // campo al cerrarse el diálogo del teclado numérico.
+        _focusEscapeTeclado.requestFocus();
+      }
+    }
+    _confirmarInline[claveFoco] = confirmar;
+
+    Future<void> abrirTecladoNumerico() async {
+      focusNode.unfocus();
+      final texto = await showDialog<String>(
+        context: context,
+        builder: (context) => TecladoNumericoDialog(
+          titulo: sufijo == '%' ? 'Descuento (%)' : 'Valor',
+          valorInicial: controlador.text,
+        ),
+      );
+      if (texto == null || !mounted) return;
+      controlador.text = texto;
+      confirmar();
+    }
 
     return TextField(
       controller: controlador,
@@ -978,6 +1018,9 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       ),
+      // En escritorio, un clic en el campo (no solo tipear) ya abre el
+      // teclado numérico en pantalla, igual que en Registrar Venta.
+      onTap: esMovil ? null : abrirTecladoNumerico,
       onSubmitted: (_) => confirmar(),
       onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
     );
@@ -1012,8 +1055,11 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
             children: [
               Expanded(flex: 2, child: Text(producto?.codigo ?? '-', style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade600))),
               Expanded(
+                // Sin maxLines/overflow: el nombre completo del producto
+                // siempre se ve, aunque la fila crezca de alto con nombres
+                // largos, en vez de cortarse con "...".
                 flex: 4,
-                child: Text(item.nombreProducto as String, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+                child: Text(item.nombreProducto as String, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
               ),
               Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero('cantidad_$index', ctrlCantidad, item.cantidad as double, (v) => _actualizarCantidad(index, v)))),
               Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: _campoInlineNumero('precio_$index', ctrlPrecio, item.precioCompra as double, (v) => _actualizarPrecio(index, v), prefijo: 'L.', dosDecimales: true))),

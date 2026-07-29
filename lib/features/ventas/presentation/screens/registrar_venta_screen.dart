@@ -2166,6 +2166,10 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
         TextField(
           controller: ctrl,
           focusNode: focusNode,
+          // Sin maxLines fijo: con nombres largos el campo crece de alto en
+          // vez de cortar/scrollear el texto en una sola línea invisible.
+          maxLines: null,
+          minLines: 1,
           style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
           decoration: const InputDecoration(isDense: true, border: InputBorder.none, contentPadding: EdgeInsets.zero),
           onSubmitted: (_) => confirmar(),

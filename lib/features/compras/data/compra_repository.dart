@@ -11,7 +11,7 @@ class CompraRepository {
   final _colComprasCredito = FirebaseFirestore.instance.collection('comprasCredito');
   final _lotes = LoteCostoRepository();
 
-  String _formatearCorrelativo(int numero) => numero.toString().padLeft(8, '0');
+  String _formatearCorrelativo(int numero) => numero.toString().padLeft(5, '0');
 
   Future<CompraModel> registrarCompra({
     required String noFactura,
