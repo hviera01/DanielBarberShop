@@ -56,10 +56,11 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
   void initState() {
     super.initState();
     final ahora = DateTime.now();
-    // Rango de 12 meses en vez de "solo este mes": ver el mismo comentario en
-    // ReporteComprasScreen — arrancar tan angosto dejaba el reporte vacío la
-    // mayoría de las veces al abrirlo por primera vez.
-    _fechaInicio = DateTime(ahora.year - 1, ahora.month, ahora.day);
+    // Por defecto muestra solo las ventas de hoy: un rango amplio (se probó
+    // con 12 meses) hacía que el usuario viera el histórico completo de
+    // entrada y lo confundiera con "no filtra nada". El usuario elige un
+    // rango más amplio a mano si lo necesita.
+    _fechaInicio = DateTime(ahora.year, ahora.month, ahora.day);
     _fechaFin = DateTime(ahora.year, ahora.month, ahora.day);
     _buscar();
   }
@@ -107,7 +108,7 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
     final ahora = DateTime.now();
     _busquedaController.clear();
     setState(() {
-      _fechaInicio = DateTime(ahora.year, ahora.month, 1);
+      _fechaInicio = DateTime(ahora.year, ahora.month, ahora.day);
       _fechaFin = DateTime(ahora.year, ahora.month, ahora.day);
       _busqueda = '';
       _metodoPagoFiltro = null;
