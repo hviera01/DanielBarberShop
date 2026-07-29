@@ -52,6 +52,7 @@ List<ModuloMenu> obtenerModulos() {
         SubModulo(titulo: 'Categorías', icono: Icons.category_outlined, moduleKey: 'categorias', roles: const [Roles.administrador]),
         SubModulo(titulo: 'Inventario', icono: Icons.inventory_2_outlined, moduleKey: 'inventario', roles: const [Roles.administrador]),
         SubModulo(titulo: 'Negocio', icono: Icons.store_outlined, moduleKey: 'negocio', roles: const [Roles.administrador]),
+        SubModulo(titulo: 'Dispositivos', icono: Icons.devices_outlined, moduleKey: 'dispositivos', roles: const [Roles.administrador]),
       ],
     ),
     ModuloMenu(

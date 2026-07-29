@@ -25,6 +25,7 @@ import '../../features/compras/presentation/screens/hacer_pedido_screen.dart';
 import '../../features/compras/providers/carrito_compra_provider.dart';
 import '../../features/caja/presentation/screens/cierre_caja_screen.dart';
 import '../../features/egresos/presentation/screens/ingresos_egresos_screen.dart';
+import '../../features/dispositivos/presentation/screens/dispositivos_screen.dart';
 
 Widget construirPantalla(String moduleKey, String titulo, IconData icono, String tabId) {
   switch (moduleKey) {
@@ -88,6 +89,8 @@ Widget construirPantalla(String moduleKey, String titulo, IconData icono, String
       return const CierreCajaScreen();
     case 'ingresos_egresos':
       return const IngresosEgresosScreen();
+    case 'dispositivos':
+      return const DispositivosScreen();
     default:
       return PlaceholderScreen(titulo: titulo, icono: icono);
   }
