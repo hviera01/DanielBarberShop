@@ -68,6 +68,10 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
   }
 
   Future<void> _buscar() async {
+    // Ver el mismo comentario en ReporteVentasScreen._buscar(): el botón
+    // grande de "Buscar" también tiene que aplicar el texto libre, no solo
+    // la flechita chiquita del cuadro de búsqueda.
+    _aplicarBusqueda();
     setState(() {
       _cargando = true;
       _error = null;

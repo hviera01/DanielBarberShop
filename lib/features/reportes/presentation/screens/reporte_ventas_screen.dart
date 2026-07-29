@@ -71,6 +71,13 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
   }
 
   Future<void> _buscar() async {
+    // El botón "Buscar" también aplica lo escrito en el cuadro de texto: antes
+    // solo re-consultaba por rango de fechas, y el texto libre solo se
+    // aplicaba al tocar la flechita chiquita adentro del cuadro (o Enter).
+    // Como acá hay dos "buscar" distintos, era fácil escribir algo, tocar el
+    // botón grande, y ver la lista completa sin filtrar como si la búsqueda
+    // no hiciera nada.
+    _aplicarBusqueda();
     setState(() {
       _cargando = true;
       _error = null;

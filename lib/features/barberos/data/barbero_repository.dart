@@ -68,6 +68,8 @@ class BarberoRepository {
         throw Exception('Ya existe un barbero con ese documento');
       }
     }
+    final anterior = await _col.doc(id).get();
+    final pctAnterior = (anterior.data()?['porcentajeComision'] as num?)?.toDouble();
     await _col.doc(id).update({
       'documento': documento,
       'nombreCompleto': nombreCompleto,
@@ -77,6 +79,29 @@ class BarberoRepository {
       'notas': notas,
       'estado': estado,
     });
+    // Todos los barberos de este negocio comparten el mismo % de comisión
+    // (es la política real del negocio, no una excepción de un barbero en
+    // particular): cuando cambia, el "costo" de los productos-servicio del
+    // catálogo (usado en Inventario y en el precio de referencia antes de
+    // asignar un barbero a la línea) se actualiza también, para no depender
+    // de que alguien edite cada servicio a mano. La comisión REAL de una
+    // venta ya sale siempre bien calculada en el momento de vender (ver
+    // CarritoVentaNotifier.establecerBarberoLinea), esto es solo para que el
+    // catálogo no quede desactualizado mientras tanto.
+    if (pctAnterior != porcentajeComision) {
+      await _actualizarCostoServicios(porcentajeComision);
+    }
+  }
+
+  Future<void> _actualizarCostoServicios(double porcentajeComision) async {
+    final productos = await FirebaseFirestore.instance.collection('productos').where('esServicio', isEqualTo: true).get();
+    if (productos.docs.isEmpty) return;
+    final batch = FirebaseFirestore.instance.batch();
+    for (final doc in productos.docs) {
+      final precioVenta = (doc.data()['precioVenta'] as num?)?.toDouble() ?? 0;
+      batch.update(doc.reference, {'precioCompra': precioVenta * porcentajeComision / 100});
+    }
+    await batch.commit();
   }
 
   Future<void> eliminar(String id) async {

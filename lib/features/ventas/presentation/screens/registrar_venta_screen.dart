@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io' show Platform;
-import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -47,19 +46,6 @@ import '../../data/tipos_documento.dart';
 import 'detalle_venta_screen.dart';
 
 const _metodosPago = ['Efectivo', 'Tarjeta', 'Transferencia', 'Mixto'];
-
-// Ver el comentario en _RegistrarVentaScreenState.build(): el scroll de toda
-// la pantalla no debe competir por el gesto de trackpad con el scroll interno
-// de la tabla de productos (ambos son verticales y quedan anidados).
-class _ScrollExteriorSinTrackpad extends MaterialScrollBehavior {
-  @override
-  Set<PointerDeviceKind> get dragDevices => {
-        PointerDeviceKind.touch,
-        PointerDeviceKind.mouse,
-        PointerDeviceKind.stylus,
-        PointerDeviceKind.invertedStylus,
-      };
-}
 
 class RegistrarVentaScreen extends ConsumerStatefulWidget {
   // Id de la pestaña donde vive esta pantalla (ver pantalla_builder.dart):
@@ -1262,30 +1248,9 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final esMovil = constraints.maxWidth < 900;
-          // La tabla de productos debe dominar la pantalla, pero se le da una
-          // altura fija generosa (no Expanded) para que nunca desaparezca si
-          // el encabezado ocupa más espacio del previsto; si el contenido no
-          // cabe completo, la pantalla se vuelve desplazable en vez de
-          // recortarse en silencio. Un porcentaje más alto que antes (y un
-          // techo más generoso): con varios productos cargados, la tabla se
-          // quedaba chica y obligaba a scrollear adentro de una zona
-          // chiquita en vez de aprovechar el alto real de la ventana.
-          final altoTabla = (constraints.maxHeight * 0.72).clamp(420.0, 1400.0);
-          // El scroll de la página completa (este SingleChildScrollView) y el
-          // scroll interno de la tabla de productos (el ListView de más
-          // abajo, dentro de una altura fija) quedan anidados en el mismo eje
-          // vertical. Con mouse eso no molesta (la rueda siempre cae en el
-          // scroll más interno bajo el cursor), pero el gesto de "dos dedos"
-          // del mouse táctil/trackpad sí compite por el gesto en la arena de
-          // Flutter, y el de la página exterior se lo quedaba primero,
-          // dejando la tabla sin poder scrollearse con el trackpad. Se le
-          // saca el trackpad como dispositivo de arrastre solo a este scroll
-          // exterior para que ya no compita: la tabla interna (que no se
-          // toca acá, sigue con el comportamiento por defecto) gana el gesto.
-          return ScrollConfiguration(
-            behavior: _ScrollExteriorSinTrackpad(),
-            child: SingleChildScrollView(
-              padding: EdgeInsets.all(esMovil ? 14 : 22),
+          if (esMovil) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1293,13 +1258,37 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                   const SizedBox(height: 14),
                   _tarjetaDatosVenta(carrito, esMovil),
                   const SizedBox(height: 14),
-                  esMovil
-                      ? _tarjetaCarritoGrande(carrito, esMovil)
-                      : SizedBox(height: altoTabla, child: _tarjetaCarritoGrande(carrito, esMovil)),
+                  _tarjetaCarritoGrande(carrito, esMovil),
                   const SizedBox(height: 14),
                   _tarjetaTotales(carrito, esMovil),
                 ],
               ),
+            );
+          }
+          // En escritorio NO se envuelve todo en un SingleChildScrollView: el
+          // encabezado/datos/totales quedan fijos y solo la tabla de
+          // productos (Expanded) scrollea con su propio ListView. Antes el
+          // scroll de toda la página y el scroll interno de la tabla quedaban
+          // anidados en el mismo eje vertical — con la rueda de un mouse no
+          // se notaba (siempre cae en el scroll más interno bajo el cursor),
+          // pero el gesto de dos dedos del trackpad competía por el gesto en
+          // la arena de Flutter y el de la página se lo ganaba, dejando la
+          // tabla sin poder scrollearse con el touchpad. Con un solo
+          // scrollable en toda la pantalla (el ListView de la tabla) no
+          // queda nada con quien competir.
+          return Padding(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _encabezado(esMovil),
+                const SizedBox(height: 14),
+                _tarjetaDatosVenta(carrito, esMovil),
+                const SizedBox(height: 14),
+                Expanded(child: _tarjetaCarritoGrande(carrito, esMovil)),
+                const SizedBox(height: 14),
+                _tarjetaTotales(carrito, esMovil),
+              ],
             ),
           );
         },
@@ -1857,17 +1846,10 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
             )
           else
             Expanded(
-              // Reinstala el trackpad como dispositivo de arrastre acá adentro
-              // (ver el comentario de _ScrollExteriorSinTrackpad en build()):
-              // sin esto, esta tabla heredaría la misma restricción del
-              // scroll exterior y tampoco respondería al trackpad.
-              child: ScrollConfiguration(
-                behavior: const MaterialScrollBehavior(),
-                child: ListView.separated(
-                  itemCount: carrito.items.length,
-                  separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
-                  itemBuilder: (context, i) => _filaCarritoTabla(i, carrito.items[i], mapaProductos),
-                ),
+              child: ListView.separated(
+                itemCount: carrito.items.length,
+                separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
+                itemBuilder: (context, i) => _filaCarritoTabla(i, carrito.items[i], mapaProductos),
               ),
             ),
         ],
