@@ -1248,36 +1248,18 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final esMovil = constraints.maxWidth < 900;
-          if (esMovil) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _encabezado(esMovil),
-                  const SizedBox(height: 14),
-                  _tarjetaDatosVenta(carrito, esMovil),
-                  const SizedBox(height: 14),
-                  _tarjetaCarritoGrande(carrito, esMovil),
-                  const SizedBox(height: 14),
-                  _tarjetaTotales(carrito, esMovil),
-                ],
-              ),
-            );
-          }
-          // En escritorio NO se envuelve todo en un SingleChildScrollView: el
-          // encabezado/datos/totales quedan fijos y solo la tabla de
-          // productos (Expanded) scrollea con su propio ListView. Antes el
-          // scroll de toda la página y el scroll interno de la tabla quedaban
-          // anidados en el mismo eje vertical — con la rueda de un mouse no
-          // se notaba (siempre cae en el scroll más interno bajo el cursor),
-          // pero el gesto de dos dedos del trackpad competía por el gesto en
-          // la arena de Flutter y el de la página se lo ganaba, dejando la
-          // tabla sin poder scrollearse con el touchpad. Con un solo
-          // scrollable en toda la pantalla (el ListView de la tabla) no
-          // queda nada con quien competir.
-          return Padding(
-            padding: const EdgeInsets.all(22),
+          // Un solo scrollable para toda la pantalla (sin una tabla con
+          // scroll propio anidada adentro): la tabla de productos se pinta
+          // como una lista simple (ver _tarjetaCarritoGrande), igual que ya
+          // se hacía en móvil, y el SingleChildScrollView de acá abajo es el
+          // único que se mueve. Esto es a propósito -se probaron dos
+          // variantes con scrolls anidados (uno con altura fija + ListView
+          // interno, otro sin scroll exterior en absoluto) y ninguna
+          // respondía bien al gesto de trackpad en escritorio, además de que
+          // la segunda dejaba la tabla sin espacio visible en ventanas
+          // chicas-.
+          return SingleChildScrollView(
+            padding: EdgeInsets.all(esMovil ? 14 : 22),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1285,7 +1267,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                 const SizedBox(height: 14),
                 _tarjetaDatosVenta(carrito, esMovil),
                 const SizedBox(height: 14),
-                Expanded(child: _tarjetaCarritoGrande(carrito, esMovil)),
+                _tarjetaCarritoGrande(carrito, esMovil),
                 const SizedBox(height: 14),
                 _tarjetaTotales(carrito, esMovil),
               ],
@@ -1819,13 +1801,12 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
               ),
             )
           else if (esMovil)
-            // En móvil no usamos una lista con scroll propio: la tabla del
-            // carrito viviría dentro del SingleChildScrollView de toda la
-            // pantalla, y dos scrolls verticales anidados hacen que, al
-            // llegar al borde de este (el interno), ya no se pueda volver a
-            // subir arrastrando "por fuera" porque no queda nada de esa
-            // pantalla visible fuera de la tabla. Con una Column simple todo
-            // el scroll lo maneja la pantalla completa.
+            // Ni en móvil ni en escritorio esta tabla tiene scroll propio: la
+            // pantalla completa vive dentro de un solo SingleChildScrollView
+            // (ver build()) y acá se pinta una Column simple, así no hay dos
+            // scrolls verticales anidados compitiendo por el gesto (rompía
+            // el scroll con mouse táctil/trackpad en escritorio, y en móvil
+            // impedía volver a subir arrastrando "por fuera" de la tabla).
             Column(
               children: [
                 for (var i = 0; i < carrito.items.length; i++) ...[
@@ -1839,18 +1820,20 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
             // "ver más grande" está abierto, esta tabla no monta sus filas
             // (esas mismas filas ya están montadas allá, usando los mismos
             // controladores).
-            Expanded(
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
               child: Center(
                 child: Text('Viendo la tabla ampliada…', style: GoogleFonts.poppins(color: Colors.grey.shade400)),
               ),
             )
           else
-            Expanded(
-              child: ListView.separated(
-                itemCount: carrito.items.length,
-                separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
-                itemBuilder: (context, i) => _filaCarritoTabla(i, carrito.items[i], mapaProductos),
-              ),
+            Column(
+              children: [
+                for (var i = 0; i < carrito.items.length; i++) ...[
+                  if (i > 0) Divider(height: 1, color: Colors.grey.shade200),
+                  _filaCarritoTabla(i, carrito.items[i], mapaProductos),
+                ],
+              ],
             ),
         ],
       ),
