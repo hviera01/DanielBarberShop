@@ -202,9 +202,23 @@ class CarritoVentaNotifier extends Notifier<CarritoVentaState> {
   /// de poder cerrar la venta si esa línea es un servicio). [pctComision] es
   /// el % vigente del barbero en este momento: se guarda tal cual en la
   /// línea, no se vuelve a consultar después.
+  ///
+  /// El "costo" (precioCompraUsado) de una línea de servicio no es un costo
+  /// de mercadería real: es la comisión que se le paga al barbero, así que
+  /// se recalcula acá como precioVenta * pctComision/100 en vez de dejar el
+  /// precioCompra fijo que traía el producto del catálogo (que quedaba
+  /// desactualizado en Utilidades/Reporte Financiero cada vez que cambiaba
+  /// el % de comisión de los barberos, ej. de 50% a 45%).
   void establecerBarberoLinea(int index, {required String idBarbero, required String nombreBarbero, required double pctComision}) {
     final nuevos = [...state.items];
-    nuevos[index] = nuevos[index].copyWith(idBarbero: idBarbero, nombreBarbero: nombreBarbero, pctComisionBarbero: pctComision);
+    final item = nuevos[index];
+    final precioCompraUsado = item.esServicio ? item.precioVenta * pctComision / 100 : item.precioCompraUsado;
+    nuevos[index] = item.copyWith(
+      idBarbero: idBarbero,
+      nombreBarbero: nombreBarbero,
+      pctComisionBarbero: pctComision,
+      precioCompraUsado: precioCompraUsado,
+    );
     state = state.copyWith(items: nuevos);
   }
 

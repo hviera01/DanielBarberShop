@@ -12,6 +12,7 @@ import '../../../productos/providers/productos_provider.dart';
 import '../../../productos/data/producto_model.dart';
 import '../../../auth/providers/auth_provider.dart';
 import '../../../ventas/presentation/widgets/buscar_cliente_dialog.dart';
+import '../../../../core/constants/roles.dart';
 
 /// Franjas de 15 minutos entre las 7:00 y las 22:00 (igual que el sistema
 /// viejo, que arrancaba a las 7am, pero con un rango un poco más amplio).
@@ -68,6 +69,14 @@ class _CitaFormDialogState extends ConsumerState<CitaFormDialog> {
       final base = widget.fechaInicial ?? DateTime.now();
       _fecha = DateTime(base.year, base.month, base.day);
       _hora = const TimeOfDay(hour: 9, minute: 0);
+    }
+    // Un usuario con rol Barbero solo puede agendar citas para sí mismo: se
+    // precarga (y más abajo se bloquea el selector) con su propio idBarbero,
+    // igual que ya se hacía en AgendaScreen para el filtro de visualización.
+    final usuario = ref.read(authProvider).usuario;
+    if (usuario?.rol == Roles.barbero && usuario!.idBarbero.isNotEmpty) {
+      _idBarbero = usuario.idBarbero;
+      _nombreBarbero = usuario.nombreCompleto;
     }
   }
 
@@ -182,6 +191,8 @@ class _CitaFormDialogState extends ConsumerState<CitaFormDialog> {
     final editando = widget.cita != null;
     final barberosAsync = ref.watch(barberosStreamProvider);
     final productosAsync = ref.watch(productosStreamProvider);
+    final usuario = ref.watch(authProvider).usuario;
+    final esBarbero = usuario?.rol == Roles.barbero;
     final tamano = MediaQuery.of(context).size;
     final esMovil = tamano.width < 480;
     final anchoDialog = esMovil ? tamano.width - 48 : 460.0;
@@ -242,6 +253,23 @@ class _CitaFormDialogState extends ConsumerState<CitaFormDialog> {
                     barberosAsync.when(
                       data: (barberos) {
                         final activos = barberos.where((b) => b.estado).toList();
+                        if (esBarbero) {
+                          // Bloqueado a su propio barbero: no tiene sentido
+                          // dejarlo agendar/reasignar citas de otro.
+                          BarberoModel? propio;
+                          for (final b in activos) {
+                            if (b.id == _idBarbero) propio = b;
+                          }
+                          if (propio != null && _nombreBarbero != propio.nombreCompleto) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) setState(() => _nombreBarbero = propio!.nombreCompleto);
+                            });
+                          }
+                          return InputDecorator(
+                            decoration: _decoracion('Barbero'),
+                            child: Text(propio?.nombreCompleto ?? _nombreBarbero ?? '-', style: GoogleFonts.poppins(fontSize: 14)),
+                          );
+                        }
                         return DropdownButtonFormField<String>(
                           initialValue: _idBarbero,
                           decoration: _decoracion('Barbero'),

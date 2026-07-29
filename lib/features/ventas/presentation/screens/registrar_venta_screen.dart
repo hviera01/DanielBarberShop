@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +28,7 @@ import '../../../categorias/providers/categorias_provider.dart';
 import '../../../barberos/providers/barberos_provider.dart';
 import '../../../barberos/data/barbero_model.dart';
 import '../../../usuarios/providers/usuarios_provider.dart';
+import '../../../../core/constants/roles.dart';
 import '../../../../core/services/impresora_red_service.dart';
 import '../../../../core/utils/codigo_barras_utils.dart';
 import '../../../../core/utils/formato_moneda.dart';
@@ -45,6 +47,19 @@ import '../../data/tipos_documento.dart';
 import 'detalle_venta_screen.dart';
 
 const _metodosPago = ['Efectivo', 'Tarjeta', 'Transferencia', 'Mixto'];
+
+// Ver el comentario en _RegistrarVentaScreenState.build(): el scroll de toda
+// la pantalla no debe competir por el gesto de trackpad con el scroll interno
+// de la tabla de productos (ambos son verticales y quedan anidados).
+class _ScrollExteriorSinTrackpad extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.invertedStylus,
+      };
+}
 
 class RegistrarVentaScreen extends ConsumerStatefulWidget {
   // Id de la pestaña donde vive esta pantalla (ver pantalla_builder.dart):
@@ -460,7 +475,11 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   Future<void> _procesarProductoSeleccionado(ProductoConPrecio resultado) async {
     final producto = resultado.producto;
     final carrito = ref.read(carritoVentaProvider);
-    final sinExistencia = producto.stock <= 0 && _categoriaControlaStock(producto.idCategoria);
+    // Un servicio (esServicio) nunca controla existencia, sin importar la
+    // categoría a la que pertenezca: no descuenta stock al venderse (ver
+    // VentaRepository.registrarVenta), así que tampoco debe bloquear la
+    // venta por existencia en 0.
+    final sinExistencia = !producto.esServicio && producto.stock <= 0 && _categoriaControlaStock(producto.idCategoria);
 
     if (sinExistencia && carrito.esCotizacion) {
       _mostrarMensaje('Advertencia: "${producto.nombre}" no tiene existencia disponible, pero se agregará a la cotización.');
@@ -645,7 +664,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     if (index >= carrito.items.length) return;
     final item = carrito.items[index];
 
-    if (!_categoriaControlaStock(item.idCategoria)) {
+    if (item.esServicio || !_categoriaControlaStock(item.idCategoria)) {
       ref.read(carritoVentaProvider.notifier).actualizarLinea(index, cantidad: nuevaCantidad);
       return;
     }
@@ -1252,21 +1271,35 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
           // quedaba chica y obligaba a scrollear adentro de una zona
           // chiquita en vez de aprovechar el alto real de la ventana.
           final altoTabla = (constraints.maxHeight * 0.72).clamp(420.0, 1400.0);
-          return SingleChildScrollView(
-            padding: EdgeInsets.all(esMovil ? 14 : 22),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _encabezado(esMovil),
-                const SizedBox(height: 14),
-                _tarjetaDatosVenta(carrito, esMovil),
-                const SizedBox(height: 14),
-                esMovil
-                    ? _tarjetaCarritoGrande(carrito, esMovil)
-                    : SizedBox(height: altoTabla, child: _tarjetaCarritoGrande(carrito, esMovil)),
-                const SizedBox(height: 14),
-                _tarjetaTotales(carrito, esMovil),
-              ],
+          // El scroll de la página completa (este SingleChildScrollView) y el
+          // scroll interno de la tabla de productos (el ListView de más
+          // abajo, dentro de una altura fija) quedan anidados en el mismo eje
+          // vertical. Con mouse eso no molesta (la rueda siempre cae en el
+          // scroll más interno bajo el cursor), pero el gesto de "dos dedos"
+          // del mouse táctil/trackpad sí compite por el gesto en la arena de
+          // Flutter, y el de la página exterior se lo quedaba primero,
+          // dejando la tabla sin poder scrollearse con el trackpad. Se le
+          // saca el trackpad como dispositivo de arrastre solo a este scroll
+          // exterior para que ya no compita: la tabla interna (que no se
+          // toca acá, sigue con el comportamiento por defecto) gana el gesto.
+          return ScrollConfiguration(
+            behavior: _ScrollExteriorSinTrackpad(),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(esMovil ? 14 : 22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _encabezado(esMovil),
+                  const SizedBox(height: 14),
+                  _tarjetaDatosVenta(carrito, esMovil),
+                  const SizedBox(height: 14),
+                  esMovil
+                      ? _tarjetaCarritoGrande(carrito, esMovil)
+                      : SizedBox(height: altoTabla, child: _tarjetaCarritoGrande(carrito, esMovil)),
+                  const SizedBox(height: 14),
+                  _tarjetaTotales(carrito, esMovil),
+                ],
+              ),
             ),
           );
         },
@@ -1824,10 +1857,17 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
             )
           else
             Expanded(
-              child: ListView.separated(
-                itemCount: carrito.items.length,
-                separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
-                itemBuilder: (context, i) => _filaCarritoTabla(i, carrito.items[i], mapaProductos),
+              // Reinstala el trackpad como dispositivo de arrastre acá adentro
+              // (ver el comentario de _ScrollExteriorSinTrackpad en build()):
+              // sin esto, esta tabla heredaría la misma restricción del
+              // scroll exterior y tampoco respondería al trackpad.
+              child: ScrollConfiguration(
+                behavior: const MaterialScrollBehavior(),
+                child: ListView.separated(
+                  itemCount: carrito.items.length,
+                  separatorBuilder: (context, i) => Divider(height: 1, color: Colors.grey.shade200),
+                  itemBuilder: (context, i) => _filaCarritoTabla(i, carrito.items[i], mapaProductos),
+                ),
               ),
             ),
         ],
@@ -2305,7 +2345,10 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
         if (mounted) _mostrarMensaje('No se pudo cargar la lista de barberos: $e');
         return;
       }
-      final usuarios = (ref.read(usuariosStreamProvider).value ?? []).where((u) => u.estado).toList();
+      // Un usuario con rol Barbero ya aparece abajo en la sección "Barberos"
+      // (vinculado por idBarbero): se excluye de "Usuarios" para no listar a
+      // la misma persona dos veces en este selector.
+      final usuarios = (ref.read(usuariosStreamProvider).value ?? []).where((u) => u.estado && u.rol != Roles.barbero).toList();
       if (!mounted) return;
       final resultado = await showDialog<(String, String, String)>(
         context: context,
