@@ -2260,13 +2260,10 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     if (_abriendoSelectorPersona) return;
     _abriendoSelectorPersona = true;
     try {
-      List<BarberoModel> barberos;
-      try {
-        barberos = await ref.read(barberosActivosProvider.future);
-      } catch (e) {
-        if (mounted) _mostrarMensaje('No se pudo cargar la lista de barberos: $e');
-        return;
-      }
+      // Provider derivado en vivo (ver barberos_provider.dart): siempre
+      // refleja el estado actual de Firestore, aunque un barbero se haya
+      // agregado o desactivado mientras esta venta ya estaba en curso.
+      final barberos = ref.read(barberosActivosProvider);
       if (!mounted) return;
       final elegido = await showDialog<BarberoModel>(
         context: context,
@@ -2303,13 +2300,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     if (_abriendoSelectorPersona) return;
     _abriendoSelectorPersona = true;
     try {
-      List<BarberoModel> barberos;
-      try {
-        barberos = await ref.read(barberosActivosProvider.future);
-      } catch (e) {
-        if (mounted) _mostrarMensaje('No se pudo cargar la lista de barberos: $e');
-        return;
-      }
+      final barberos = ref.read(barberosActivosProvider);
       // Un usuario con rol Barbero ya aparece abajo en la sección "Barberos"
       // (vinculado por idBarbero): se excluye de "Usuarios" para no listar a
       // la misma persona dos veces en este selector.

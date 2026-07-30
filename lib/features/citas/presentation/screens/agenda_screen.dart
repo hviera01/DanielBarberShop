@@ -26,8 +26,11 @@ class AgendaScreen extends ConsumerStatefulWidget {
 }
 
 class _AgendaScreenState extends ConsumerState<AgendaScreen> {
-  DateTime _fechaInicio = DateTime.now().subtract(const Duration(days: 1));
-  DateTime _fechaFin = DateTime.now().add(const Duration(days: 7));
+  // Por defecto muestra solo las citas de hoy (antes era de ayer a 7 días
+  // adelante): un rango amplio hacía que se viera todo mezclado de entrada.
+  // El usuario elige un rango más amplio a mano si lo necesita.
+  DateTime _fechaInicio = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+  DateTime _fechaFin = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
   String? _idBarberoFiltro;
   final _busquedaController = TextEditingController();
   String _busqueda = '';
@@ -283,7 +286,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
           style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF1A1A1A)),
           items: [
             const DropdownMenuItem<String?>(value: null, child: Text('Todos los barberos')),
-            ...barberosAsync.value?.map((b) => DropdownMenuItem<String?>(value: b.id as String, child: Text(b.nombreCompleto as String))) ?? [],
+            ...(barberosAsync.value ?? []).where((b) => b.estado as bool).map((b) => DropdownMenuItem<String?>(value: b.id as String, child: Text(b.nombreCompleto as String))),
           ],
           onChanged: (v) => setState(() => _idBarberoFiltro = v),
         ),

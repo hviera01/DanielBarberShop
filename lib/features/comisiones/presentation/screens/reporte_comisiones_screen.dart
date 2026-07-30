@@ -379,7 +379,7 @@ class _ReporteComisionesScreenState extends ConsumerState<ReporteComisionesScree
           style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF1A1A1A)),
           items: [
             const DropdownMenuItem<String?>(value: null, child: Text('Todos')),
-            ...(barberosAsync.value ?? []).map((b) => DropdownMenuItem<String?>(value: 'Barbero:${b.id}', child: Text('✂️ ${b.nombreCompleto}'))),
+            ...(barberosAsync.value ?? []).where((b) => b.estado).map((b) => DropdownMenuItem<String?>(value: 'Barbero:${b.id}', child: Text('✂️ ${b.nombreCompleto}'))),
             ...(usuariosAsync.value ?? []).where((u) => u.rol != Roles.barbero).map((u) => DropdownMenuItem<String?>(value: 'Usuario:${u.id}', child: Text('👤 ${u.nombreCompleto}'))),
           ],
           // El cambio sí actualiza al toque: es un filtro simple (no una
