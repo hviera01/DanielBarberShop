@@ -27,6 +27,7 @@ import '../../../categorias/providers/categorias_provider.dart';
 import '../../../barberos/providers/barberos_provider.dart';
 import '../../../barberos/data/barbero_model.dart';
 import '../../../usuarios/providers/usuarios_provider.dart';
+import '../../../usuarios/data/usuario_model.dart';
 import '../../../../core/constants/roles.dart';
 import '../../../../core/services/impresora_red_service.dart';
 import '../../../../core/utils/codigo_barras_utils.dart';
@@ -1238,6 +1239,13 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   @override
   Widget build(BuildContext context) {
     final carrito = ref.watch(carritoVentaProvider);
+    // Arranca la suscripción a los streams de barberos y usuarios apenas se
+    // abre esta pantalla (en vez de esperar a que se agregue un servicio o
+    // producto) para que los selectores "¿Quién atendió?"/"¿Quién vendió?"
+    // ya tengan los datos listos en la práctica; ver _barberosActivosListos()
+    // y _usuariosActivosListos() para el respaldo si aún así no llegaron.
+    ref.watch(barberosStreamProvider);
+    ref.watch(usuariosStreamProvider);
     // Si el diálogo de "ver la tabla más grande" está abierto, le pide que
     // se vuelva a pintar con los datos ya leídos por este `ref` (el
     // correcto para esta pestaña) cada vez que el carrito cambia — ver
@@ -2289,14 +2297,28 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     );
   }
 
+  // barberosActivosProvider es un simple `ref.read` sobre barberosStreamProvider:
+  // si esta pantalla se abre y se agrega un servicio antes de que el stream de
+  // Firestore haya entregado su primer snapshot (nadie más lo "activó" antes),
+  // el valor cacheado todavía es [] y el selector decía "No hay barberos
+  // activos" con barberos reales dados de alta. Acá se espera el snapshot
+  // real si todavía no llegó, en vez de asumir que la lista vacía es final.
+  Future<List<BarberoModel>> _barberosActivosListos() async {
+    final actual = ref.read(barberosStreamProvider);
+    if (actual.hasValue) return actual.value!.where((b) => b.estado).toList();
+    try {
+      final barberos = await ref.read(barberoRepositoryProvider).obtenerBarberos().first.timeout(const Duration(seconds: 8));
+      return barberos.where((b) => b.estado).toList();
+    } catch (_) {
+      return ref.read(barberosActivosProvider);
+    }
+  }
+
   Future<void> _seleccionarBarbero(int index) async {
     if (_abriendoSelectorPersona) return;
     _abriendoSelectorPersona = true;
     try {
-      // Provider derivado en vivo (ver barberos_provider.dart): siempre
-      // refleja el estado actual de Firestore, aunque un barbero se haya
-      // agregado o desactivado mientras esta venta ya estaba en curso.
-      final barberos = ref.read(barberosActivosProvider);
+      final barberos = await _barberosActivosListos();
       if (!mounted) return;
       final elegido = await showDialog<BarberoModel>(
         context: context,
@@ -2329,15 +2351,29 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     }
   }
 
+  // Mismo respaldo que _barberosActivosListos(), pero para el stream de
+  // usuarios: el selector "¿Quién vendió?" también podía quedar vacío por la
+  // misma razón (lectura puntual de un stream que aún no había entregado).
+  Future<List<UsuarioModel>> _usuariosActivosListos() async {
+    final actual = ref.read(usuariosStreamProvider);
+    if (actual.hasValue) return actual.value!.where((u) => u.estado).toList();
+    try {
+      final usuarios = await ref.read(usuarioRepositoryProvider).obtenerUsuarios().first.timeout(const Duration(seconds: 8));
+      return usuarios.where((u) => u.estado).toList();
+    } catch (_) {
+      return (ref.read(usuariosStreamProvider).value ?? []).where((u) => u.estado).toList();
+    }
+  }
+
   Future<void> _seleccionarVendidoPor(int index) async {
     if (_abriendoSelectorPersona) return;
     _abriendoSelectorPersona = true;
     try {
-      final barberos = ref.read(barberosActivosProvider);
+      final barberos = await _barberosActivosListos();
       // Un usuario con rol Barbero ya aparece abajo en la sección "Barberos"
       // (vinculado por idBarbero): se excluye de "Usuarios" para no listar a
       // la misma persona dos veces en este selector.
-      final usuarios = (ref.read(usuariosStreamProvider).value ?? []).where((u) => u.estado && u.rol != Roles.barbero).toList();
+      final usuarios = (await _usuariosActivosListos()).where((u) => u.rol != Roles.barbero).toList();
       if (!mounted) return;
       final resultado = await showDialog<(String, String, String)>(
         context: context,
