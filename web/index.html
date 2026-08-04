@@ -50,6 +50,19 @@
           await Promise.all(nombres.map((n) => caches.delete(n)));
         }
       } catch (e) {}
+      try {
+        // Lo de arriba borra el Cache Storage del service worker, pero ese
+        // es un cache aparte del cache HTTP normal del navegador -el que
+        // respeta el "Cache-Control: max-age=600" que manda GitHub Pages-.
+        // Sin esto, aunque se borre todo lo de arriba, index.html/
+        // flutter_bootstrap.js/main.dart.js seguían sirviéndose "frescos"
+        // desde ese otro cache hasta que pasaran los 10 minutos. Pedir cada
+        // archivo clave con {cache:'reload'} fuerza ir a la red e
+        // ignorar lo guardado, y de paso deja la respuesta nueva puesta en
+        // ese mismo cache HTTP para que el reload de abajo ya la encuentre.
+        const archivosClave = ['index.html', 'flutter_bootstrap.js', 'flutter.js', 'main.dart.js', 'flutter_service_worker.js', 'version.json'];
+        await Promise.all(archivosClave.map((f) => fetch(f, { cache: 'reload' }).catch(() => {})));
+      } catch (e) {}
       location.reload();
     };
   </script>
