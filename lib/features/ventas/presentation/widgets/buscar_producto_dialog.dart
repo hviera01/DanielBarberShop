@@ -47,6 +47,10 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
   List<ProductoModel> _listaActual = [];
   String? _filaSeleccionada;
   int _nivelActivo = 1;
+  // Filtro por categoría (id de categoría, o null = todas): se aplica en
+  // vivo apenas se elige, sin necesidad de tocar "Buscar" -a diferencia del
+  // texto libre, que sigue aplicándose solo con Enter/botón.
+  String? _categoriaFiltro;
   // Orden de la lista de resultados (solo la columna "Existencia" por
   // ahora, ver _encabezadoOrdenable). null = sin ordenar, en el orden que
   // ya trae el stream.
@@ -61,6 +65,7 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
   List<ProductoModel>? _productosCacheados;
   String? _busquedaFiltroCacheada;
   bool? _exactaFiltroCacheada;
+  String? _categoriaFiltroCacheada;
   String? _columnaOrdenCacheada;
   bool? _ordenAscendenteCacheado;
 
@@ -95,6 +100,7 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
     if (identical(productos, _productosCacheados) &&
         _busquedaFiltroCacheada == _busquedaAplicada &&
         _exactaFiltroCacheada == _busquedaExacta &&
+        _categoriaFiltroCacheada == _categoriaFiltro &&
         _columnaOrdenCacheada == _columnaOrden &&
         _ordenAscendenteCacheado == _ordenAscendente) {
       return _listaActual;
@@ -102,9 +108,10 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
     _productosCacheados = productos;
     _busquedaFiltroCacheada = _busquedaAplicada;
     _exactaFiltroCacheada = _busquedaExacta;
+    _categoriaFiltroCacheada = _categoriaFiltro;
     _columnaOrdenCacheada = _columnaOrden;
     _ordenAscendenteCacheado = _ordenAscendente;
-    final lista = productos.where((p) => p.estado && _coincide(p, _busquedaAplicada)).toList();
+    final lista = productos.where((p) => p.estado && (_categoriaFiltro == null || p.idCategoria == _categoriaFiltro) && _coincide(p, _busquedaAplicada)).toList();
     if (_columnaOrden == 'existencia') {
       lista.sort((a, b) => _ordenAscendente ? a.stock.compareTo(b.stock) : b.stock.compareTo(a.stock));
     }
@@ -335,6 +342,7 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
                       ),
                     ),
                   ),
+                  _selectorCategoria(categoriasLista, esMovil),
                   _selectorNivelPrecio(),
                   // Escanear con la cámara solo tiene sentido en el celular
                   // (APK o navegador móvil): en escritorio no hay cámara
@@ -380,7 +388,7 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
                     onKeyEvent: _manejarTeclado,
                     child: productosAsync.when(
                     data: (productos) {
-                      if (_busquedaAplicada.isEmpty) {
+                      if (_busquedaAplicada.isEmpty && _categoriaFiltro == null) {
                         _listaActual = [];
                         return Center(
                           child: Column(
@@ -388,7 +396,7 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
                             children: [
                               Icon(Icons.search, size: 48, color: Colors.grey.shade300),
                               const SizedBox(height: 12),
-                              Text('Escribí algo y presioná Enter para buscar', style: GoogleFonts.poppins(color: Colors.grey.shade500)),
+                              Text('Escribí algo, elegí una categoría, o ambos', style: GoogleFonts.poppins(color: Colors.grey.shade500)),
                             ],
                           ),
                         );
@@ -429,6 +437,34 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _selectorCategoria(List<dynamic> categorias, bool esMovil) {
+    return SizedBox(
+      width: esMovil ? double.infinity : 220,
+      child: Container(
+        height: 50,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFB6BCC7))),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String?>(
+            isExpanded: true,
+            value: _categoriaFiltro,
+            hint: Text('Todas las categorías', style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade500)),
+            style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF1A1A1A)),
+            items: [
+              DropdownMenuItem<String?>(value: null, child: Text('Todas las categorías', style: GoogleFonts.poppins(fontSize: 13))),
+              ...categorias.map((c) => DropdownMenuItem<String?>(value: c.id as String, child: Text(c.descripcion as String, overflow: TextOverflow.ellipsis))),
+            ],
+            onChanged: (v) => setState(() {
+              _categoriaFiltro = v;
+              _filaSeleccionada = null;
+              _clavesFila.clear();
+            }),
           ),
         ),
       ),
@@ -477,7 +513,8 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(flex: 2, child: Text('Código', style: estilo)),
-        Expanded(flex: 6, child: Text('Descripción', style: estilo)),
+        Expanded(flex: 4, child: Text('Nombre', style: estilo)),
+        Expanded(flex: 4, child: Text('Descripción', style: estilo)),
         Expanded(flex: 3, child: Text('Categoría', style: estilo)),
         Expanded(flex: 3, child: Text('Precio', textAlign: TextAlign.right, style: estilo)),
         Expanded(flex: 2, child: _encabezadoOrdenable('Existencia', 'existencia', estilo)),
@@ -556,20 +593,20 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
             children: [
               Expanded(flex: 2, child: Text(p.codigo, style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade600))),
               Expanded(
-                flex: 6,
+                flex: 4,
                 child: Padding(
                   padding: const EdgeInsets.only(right: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(p.nombre, softWrap: true, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w600)),
-                      if (p.descripcion.trim().isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(p.descripcion, softWrap: true, style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade500)),
-                        ),
-                    ],
+                  child: Text(p.nombre, softWrap: true, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                ),
+              ),
+              Expanded(
+                flex: 4,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: Text(
+                    p.descripcion.trim().isNotEmpty ? p.descripcion : '-',
+                    softWrap: true,
+                    style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade500),
                   ),
                 ),
               ),

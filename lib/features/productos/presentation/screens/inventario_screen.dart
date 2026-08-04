@@ -752,7 +752,10 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                       // no necesita un segundo pase de layout por fila para saber
                       // cuánto "estirar" cada celda (lo que exigía IntrinsicHeight),
                       // así que desplazarse por listas largas queda mucho más fluido.
-                      height: 64,
+                      // 88 (en vez de 64) para que un nombre largo tenga espacio real
+                      // de pasar a una segunda/tercera línea sin que el texto quede
+                      // cortado por el alto fijo de la fila.
+                      height: 88,
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -772,7 +775,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                             flex: 24,
                             child: Text(
                               producto.nombre,
-                              maxLines: 2,
+                              maxLines: 3,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.poppins(
                                 fontSize: 12.5,
