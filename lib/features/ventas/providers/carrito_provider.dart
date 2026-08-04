@@ -59,7 +59,7 @@ class CarritoVentaState {
   // a cobrar sin tocar nunca el precio de las líneas. La comisión del
   // barbero (ver establecerBarberoLinea) sigue calculándose siempre sobre
   // el precio real del servicio.
-  // porcentajeTarjeta solo elige el % sugerido (2.9/3.5) para calcular el
+  // porcentajeTarjeta solo elige el % sugerido (2.9/3.0/3.5) para calcular el
   // monto automáticamente; el monto en sí (montoRecargoTarjeta) es lo que de
   // verdad se guarda y se suma, y el cajero lo puede editar a mano después
   // sin que se recalcule solo.

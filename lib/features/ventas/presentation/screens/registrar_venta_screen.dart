@@ -1411,7 +1411,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       height: 50,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(color: const Color(0xFFE8EAF0), borderRadius: BorderRadius.circular(12)),
-      child: Row(children: [opcion(2.9), opcion(3.5)]),
+      child: Row(children: [opcion(2.9), opcion(3.0), opcion(3.5)]),
     );
   }
 
@@ -1545,7 +1545,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
               // tenga que saber de memoria el % exacto de cada tipo de
               // tarjeta.
               if (!carrito.esCotizacion && carrito.condicion != 'Credito' && carrito.metodoPago == 'Tarjeta')
-                SizedBox(width: esMovil ? double.infinity : 220, child: _selectorComisionTarjeta(carrito.porcentajeTarjeta)),
+                SizedBox(width: esMovil ? double.infinity : 280, child: _selectorComisionTarjeta(carrito.porcentajeTarjeta)),
               if (!carrito.esCotizacion && carrito.condicion != 'Credito' && carrito.metodoPago == 'Tarjeta')
                 SizedBox(
                   width: esMovil ? double.infinity : 160,
