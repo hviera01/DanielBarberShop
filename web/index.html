@@ -31,6 +31,28 @@
 
   <title>Daniel's Barber Shop - Sistema de Ventas</title>
   <link rel="manifest" href="manifest.json">
+
+  <script>
+    // Botón "Actualizar app" del menú lateral (ver web_refresh_web.dart):
+    // desregistra el service worker y borra las caches del navegador antes
+    // de recargar, para que quien usa la web no tenga que abrir DevTools ni
+    // saber qué es un Ctrl+Shift+R cuando queda pegado en una versión vieja.
+    window.limpiarCacheYRecargarApp = async function () {
+      try {
+        if ('serviceWorker' in navigator) {
+          const registros = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registros.map((r) => r.unregister()));
+        }
+      } catch (e) {}
+      try {
+        if ('caches' in window) {
+          const nombres = await caches.keys();
+          await Promise.all(nombres.map((n) => caches.delete(n)));
+        }
+      } catch (e) {}
+      location.reload();
+    };
+  </script>
 </head>
 <body>
   <!--

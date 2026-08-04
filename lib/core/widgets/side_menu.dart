@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,6 +7,7 @@ import '../models/tab_item.dart';
 import '../providers/actualizacion_provider.dart';
 import '../providers/tabs_provider.dart';
 import '../services/actualizacion_service.dart';
+import '../services/web_refresh_service.dart';
 import '../utils/pantalla_builder.dart';
 import '../widgets/actualizacion_dialog.dart';
 import '../../features/auth/providers/auth_provider.dart';
@@ -134,6 +136,13 @@ class SideMenu extends ConsumerWidget {
                   );
                 }),
               ],
+              if (kIsWeb)
+                ListTile(
+                  leading: Icon(Icons.refresh, color: Colors.grey.shade600, size: 20),
+                  title: Text('Actualizar app', style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade700)),
+                  subtitle: Text('Si ves algo raro o falta algo nuevo, tocá acá', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500)),
+                  onTap: () => limpiarCacheYRecargarWeb(),
+                ),
             ],
           ),
         ),
