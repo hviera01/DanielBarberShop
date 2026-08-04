@@ -847,6 +847,7 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
               if (_descuentosYRebajas(venta) > 0) _filaTotalTexto('Descuentos y rebajas', _descuentosYRebajas(venta)),
               if (venta.impuesto > 0) _filaTotalTexto('ISV (15%)', venta.impuesto),
               if (venta.descuentoGlobal > 0) _filaTotalTextoPorcentaje('Descuento global', venta.descuentoGlobal),
+              if (venta.metodoPago == 'Tarjeta' && venta.montoRecargoTarjeta > 0) _filaTotalTexto('Recargo pago tarjeta', venta.montoRecargoTarjeta),
               if (venta.condicion != 'Credito' && venta.metodoPago == 'Efectivo' && venta.montoPago > 0) ...[
                 _filaTotalTexto('Paga con', venta.montoPago),
                 _filaTotalTexto('Cambio', venta.montoCambio),
@@ -864,7 +865,7 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('TOTAL A PAGAR', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
-                Text(formatearMoneda(venta.totalAPagar), style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white)),
+                Text(formatearMoneda(venta.totalConRecargo), style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white)),
               ],
             ),
           ),

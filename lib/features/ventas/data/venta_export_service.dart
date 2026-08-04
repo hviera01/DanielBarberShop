@@ -498,15 +498,19 @@ class VentaExportService {
               _filaTotal('ISV 15%:', venta.impuesto),
             ],
             _filaTotal('TOTAL A PAGAR:', venta.totalAPagar, negrita: true),
+            if (venta.metodoPago == 'Tarjeta' && venta.montoRecargoTarjeta > 0) ...[
+              _filaTotal('Recargo pago tarjeta:', venta.montoRecargoTarjeta),
+              _filaTotal('TOTAL COBRADO:', venta.totalConRecargo, negrita: true),
+            ],
             pw.SizedBox(height: 6),
             _separador(),
-            pw.Text('Son: ${convertirNumeroALetras(venta.totalAPagar)}', style: const pw.TextStyle(fontSize: fNormal)),
+            pw.Text('Son: ${convertirNumeroALetras(venta.totalConRecargo)}', style: const pw.TextStyle(fontSize: fNormal)),
             if (venta.condicion != 'Credito') ...[
               if (venta.metodoPago == 'Efectivo') ...[
                 pw.Text('Efectivo: ${formatearMoneda(venta.montoPago)}', style: const pw.TextStyle(fontSize: fNormal)),
                 pw.Text('Cambio: ${formatearMoneda(venta.montoCambio)}', style: const pw.TextStyle(fontSize: fNormal)),
               ] else if (venta.metodoPago == 'Tarjeta')
-                pw.Text('Pago con tarjeta: ${formatearMoneda(venta.totalAPagar)}', style: const pw.TextStyle(fontSize: fNormal))
+                pw.Text('Pago con tarjeta: ${formatearMoneda(venta.totalConRecargo)}', style: const pw.TextStyle(fontSize: fNormal))
               else if (venta.metodoPago == 'Transferencia')
                 pw.Text('Transferencia', style: const pw.TextStyle(fontSize: fNormal))
               else if (venta.metodoPago == 'Mixto')

@@ -68,6 +68,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
   final _regExoneradoController = TextEditingController();
   final _regSagController = TextEditingController();
   final _descuentoGlobalController = TextEditingController();
+  final _ctrlRecargoTarjeta = TextEditingController();
   bool _datosExpandidos = false;
   // Este negocio no cobra ISV: queda permanentemente en false (no hay
   // selector para cambiarlo) para no tener que tocar cada lugar del archivo
@@ -202,6 +203,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       _regExoneradoController.text = ventaOrigen.regExonerado;
       _regSagController.text = ventaOrigen.regSag;
       _descuentoGlobalController.text = ventaOrigen.descuentoGlobal == 0 ? '' : _formatoCantidad(ventaOrigen.descuentoGlobal);
+      _ctrlRecargoTarjeta.clear();
     }
   }
 
@@ -340,6 +342,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     _regExoneradoController.dispose();
     _regSagController.dispose();
     _descuentoGlobalController.dispose();
+    _ctrlRecargoTarjeta.dispose();
     for (final c in _ctrlCantidad.values) {
       c.dispose();
     }
@@ -759,6 +762,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       _regExoneradoController.text = sesion.regExonerado;
       _regSagController.text = sesion.regSag;
       _descuentoGlobalController.text = sesion.descuentoGlobal == 0 ? '' : _formatoCantidad(sesion.descuentoGlobal);
+      _ctrlRecargoTarjeta.clear();
     });
   }
 
@@ -770,6 +774,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
     _regExoneradoController.clear();
     _regSagController.clear();
     _descuentoGlobalController.clear();
+    _ctrlRecargoTarjeta.clear();
     for (final c in _ctrlCantidad.values) {
       c.dispose();
     }
@@ -834,11 +839,6 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       _mostrarMensaje('Hay un servicio sin barbero asignado');
       return;
     }
-    if (carrito.metodoPago == 'Tarjeta' && carrito.porcentajeTarjeta <= 0) {
-      _mostrarMensaje('Indicá el % de comisión de la tarjeta');
-      return;
-    }
-
     var montoPago = 0.0;
     var montoCambio = 0.0;
     var pagosMixtos = const <PagoDetalle>[];
@@ -957,6 +957,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
             usuario: usuario,
             categoriasSinControlStock: categoriasSinControlStock,
             porcentajeTarjeta: carrito.porcentajeTarjeta,
+            montoRecargoTarjeta: carrito.montoRecargoTarjeta,
           );
 
       if (carrito.idEnEspera != null) {
@@ -1372,7 +1373,14 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       final activo = valorActual == porcentaje;
       return Expanded(
         child: InkWell(
-          onTap: () => ref.read(carritoVentaProvider.notifier).establecerPorcentajeTarjeta(porcentaje),
+          onTap: () {
+            ref.read(carritoVentaProvider.notifier).establecerPorcentajeTarjeta(porcentaje);
+            // El monto se recalcula solo (ver establecerPorcentajeTarjeta):
+            // el campo de texto de al lado (_ctrlRecargoTarjeta) no está
+            // atado al provider, así que hay que reflejar el valor nuevo acá
+            // a mano para que no se quede mostrando el monto viejo.
+            _ctrlRecargoTarjeta.text = ref.read(carritoVentaProvider).montoRecargoTarjeta.toStringAsFixed(2);
+          },
           borderRadius: BorderRadius.circular(10),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
@@ -1509,19 +1517,40 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
                     onChanged: (v) {
                       if (v == null) return;
                       ref.read(carritoVentaProvider.notifier).establecerMetodoPago(v);
+                      // El monto de recargo vuelve a 0 al salir de Tarjeta
+                      // (ver establecerMetodoPago); el campo de texto de al
+                      // lado no está atado al provider, así que se limpia acá
+                      // a mano para no dejar mostrando un monto viejo.
+                      _ctrlRecargoTarjeta.clear();
                     },
                   ),
                 ),
-              // Comisión bancaria: el cliente sigue pagando el total completo
-              // acá (no cambia totalAPagar en pantalla) — se guarda como
-              // metadata en la venta, y es recién al guardar (ver
-              // VentaRepository.registrarVenta) que se le resta al total
-              // registrado, igual que en el sistema viejo de la barbería.
+              // Recargo por pago con tarjeta: el cliente paga el total de la
+              // venta MÁS este recargo aparte (ver
+              // CarritoVentaState.totalConRecargo), nunca se mezcla con el
+              // precio de las líneas -a diferencia de cómo se hacía antes,
+              // que inflaba el precio del servicio y con eso también la
+              // comisión del barbero, calculada sobre ese mismo precio. El
+              // % solo sugiere un monto automático; el cajero lo puede
+              // editar libremente en el campo de al lado.
               // Dos tasas fijas (no texto libre) para que el cajero no
               // tenga que saber de memoria el % exacto de cada tipo de
               // tarjeta.
               if (!carrito.esCotizacion && carrito.condicion != 'Credito' && carrito.metodoPago == 'Tarjeta')
                 SizedBox(width: esMovil ? double.infinity : 220, child: _selectorComisionTarjeta(carrito.porcentajeTarjeta)),
+              if (!carrito.esCotizacion && carrito.condicion != 'Credito' && carrito.metodoPago == 'Tarjeta')
+                SizedBox(
+                  width: esMovil ? double.infinity : 160,
+                  child: _campoInlineConEtiqueta(
+                    'recargoTarjeta',
+                    'Monto de recargo',
+                    _ctrlRecargoTarjeta,
+                    carrito.montoRecargoTarjeta,
+                    (v) => ref.read(carritoVentaProvider.notifier).establecerMontoRecargoTarjeta(v),
+                    prefijo: 'L.',
+                    dosDecimales: true,
+                  ),
+                ),
               InkWell(
                 onTap: () => setState(() => _datosExpandidos = !_datosExpandidos),
                 borderRadius: BorderRadius.circular(10),
@@ -1972,7 +2001,11 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
             total('ISV', carrito.impuesto),
             const SizedBox(width: 20),
           ],
-          total('Total a pagar', carrito.totalAPagar, destacado: true),
+          if (carrito.metodoPago == 'Tarjeta' && carrito.montoRecargoTarjeta > 0) ...[
+            total('Recargo tarjeta', carrito.montoRecargoTarjeta),
+            const SizedBox(width: 20),
+          ],
+          total('Total a pagar', carrito.totalConRecargo, destacado: true),
           const Spacer(),
           SizedBox(
             height: 38,
@@ -2448,6 +2481,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
               _filaTotalTexto('Subtotal', carrito.subtotal),
               if (carrito.impuesto > 0) _filaTotalTexto('ISV (15%)', carrito.impuesto),
               if (carrito.descuentoGlobalPorcentaje > 0) _filaTotalTextoPorcentaje('Descuento global', carrito.descuentoGlobalPorcentaje),
+              if (carrito.metodoPago == 'Tarjeta' && carrito.montoRecargoTarjeta > 0) _filaTotalTexto('Recargo pago tarjeta', carrito.montoRecargoTarjeta),
               if (!carrito.esCotizacion && carrito.condicion != 'Credito' && carrito.metodoPago == 'Efectivo' && carrito.pagoCon > 0) ...[
                 _filaTotalTexto('Paga con', carrito.pagoCon),
                 _filaTotalTexto('Cambio', carrito.cambio),
@@ -2463,7 +2497,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('TOTAL A PAGAR', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
-                Text(formatearMoneda(carrito.totalAPagar), style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white)),
+                Text(formatearMoneda(carrito.totalConRecargo), style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white)),
               ],
             ),
           ),

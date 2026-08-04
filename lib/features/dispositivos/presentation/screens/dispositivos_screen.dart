@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import '../../data/dispositivo_model.dart';
 import '../../providers/dispositivos_provider.dart';
 import '../../../../core/services/actualizacion_service.dart';
 
@@ -27,11 +28,12 @@ class _DispositivosScreenState extends ConsumerState<DispositivosScreen> {
   Widget build(BuildContext context) {
     final dispositivosAsync = ref.watch(dispositivosStreamProvider);
     final formatoFecha = DateFormat('dd/MM/yyyy hh:mm a');
+    final esMovil = MediaQuery.of(context).size.width < 700;
 
     return Container(
       color: const Color(0xFFF2F3F7),
       child: Padding(
-        padding: const EdgeInsets.all(26),
+        padding: EdgeInsets.all(esMovil ? 14 : 26),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -40,7 +42,7 @@ class _DispositivosScreenState extends ConsumerState<DispositivosScreen> {
               spacing: 12,
               runSpacing: 10,
               children: [
-                Text('Dispositivos', style: GoogleFonts.poppins(fontSize: 22, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
+                Text('Dispositivos', style: GoogleFonts.poppins(fontSize: esMovil ? 18 : 22, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
                 if (_ultimaVersionPublicada != null)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -58,10 +60,10 @@ class _DispositivosScreenState extends ConsumerState<DispositivosScreen> {
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: esMovil ? null : Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFAEB4C0), width: 1.3),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.14), blurRadius: 26, offset: const Offset(0, 12))],
+                  border: esMovil ? null : Border.all(color: const Color(0xFFAEB4C0), width: 1.3),
+                  boxShadow: esMovil ? null : [BoxShadow(color: Colors.black.withOpacity(0.14), blurRadius: 26, offset: const Offset(0, 12))],
                 ),
                 child: dispositivosAsync.when(
                   data: (dispositivos) {
@@ -70,61 +72,7 @@ class _DispositivosScreenState extends ConsumerState<DispositivosScreen> {
                         child: Text('Todavía no hay dispositivos registrados', style: GoogleFonts.poppins(color: Colors.grey.shade500)),
                       );
                     }
-                    return ListView.builder(
-                      itemCount: dispositivos.length + 1,
-                      itemBuilder: (context, index) {
-                        if (index == 0) {
-                          return Container(
-                            height: 48,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            decoration: BoxDecoration(color: const Color(0xFFECEEF3), borderRadius: const BorderRadius.vertical(top: Radius.circular(16)), border: Border(bottom: BorderSide(color: Colors.grey.shade300))),
-                            child: Row(
-                              children: [
-                                _celdaHeader('DISPOSITIVO', 3),
-                                _celdaHeader('PLATAFORMA', 2),
-                                _celdaHeader('VERSIÓN', 2),
-                                _celdaHeader('ÚLTIMO USUARIO', 2),
-                                _celdaHeader('ÚLTIMA CONEXIÓN', 3),
-                              ],
-                            ),
-                          );
-                        }
-                        final d = dispositivos[index - 1];
-                        final desactualizado = _ultimaVersionPublicada != null && d.versionApp < _ultimaVersionPublicada!;
-                        return Container(
-                          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade200))),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          child: Row(
-                            children: [
-                              _celda(3, d.id, peso: FontWeight.w600),
-                              _celda(2, d.plataforma),
-                              Expanded(
-                                flex: 2,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: desactualizado ? const Color(0xFFFCE4E4) : const Color(0xFFE8F8EE),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text('v${d.versionApp}', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: desactualizado ? const Color(0xFFB91C1C) : const Color(0xFF16A34A))),
-                                      if (desactualizado) ...[
-                                        const SizedBox(width: 4),
-                                        const Icon(Icons.warning_amber_rounded, size: 13, color: Color(0xFFB91C1C)),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              _celda(2, d.usuario.isEmpty ? '-' : d.usuario),
-                              _celda(3, d.ultimaConexion != null ? formatoFecha.format(d.ultimaConexion!) : '-', gris: true),
-                            ],
-                          ),
-                        );
-                      },
-                    );
+                    return esMovil ? _listaMovil(dispositivos, formatoFecha) : _tablaEscritorio(dispositivos, formatoFecha);
                   },
                   loading: () => const Center(child: CircularProgressIndicator(color: Color(0xFF0F1B3D))),
                   error: (e, st) => Center(child: Text('Error: $e', style: GoogleFonts.poppins(color: Colors.red))),
@@ -133,6 +81,124 @@ class _DispositivosScreenState extends ConsumerState<DispositivosScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _tablaEscritorio(List<DispositivoModel> dispositivos, DateFormat formatoFecha) {
+    return ListView.builder(
+      itemCount: dispositivos.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(color: const Color(0xFFECEEF3), borderRadius: const BorderRadius.vertical(top: Radius.circular(16)), border: Border(bottom: BorderSide(color: Colors.grey.shade300))),
+            child: Row(
+              children: [
+                _celdaHeader('DISPOSITIVO', 3),
+                _celdaHeader('PLATAFORMA', 2),
+                _celdaHeader('VERSIÓN', 2),
+                _celdaHeader('ÚLTIMO USUARIO', 2),
+                _celdaHeader('ÚLTIMA CONEXIÓN', 3),
+              ],
+            ),
+          );
+        }
+        final d = dispositivos[index - 1];
+        final desactualizado = _ultimaVersionPublicada != null && d.versionApp < _ultimaVersionPublicada!;
+        return Container(
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade200))),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              _celda(3, d.id, peso: FontWeight.w600),
+              _celda(2, d.plataforma),
+              Expanded(
+                flex: 2,
+                child: Align(alignment: Alignment.centerLeft, child: _chipVersion(d.versionApp, desactualizado)),
+              ),
+              _celda(2, d.usuario.isEmpty ? '-' : d.usuario),
+              _celda(3, d.ultimaConexion != null ? formatoFecha.format(d.ultimaConexion!) : '-', gris: true),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _listaMovil(List<DispositivoModel> dispositivos, DateFormat formatoFecha) {
+    return ListView.separated(
+      itemCount: dispositivos.length,
+      separatorBuilder: (context, i) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final d = dispositivos[index];
+        final desactualizado = _ultimaVersionPublicada != null && d.versionApp < _ultimaVersionPublicada!;
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFC7CBD3)),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 10, offset: const Offset(0, 4))],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(d.id, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A1A))),
+                  ),
+                  _chipVersion(d.versionApp, desactualizado),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 14,
+                runSpacing: 4,
+                children: [
+                  _datoMovil('Plataforma', d.plataforma),
+                  _datoMovil('Último usuario', d.usuario.isEmpty ? '-' : d.usuario),
+                ],
+              ),
+              const SizedBox(height: 4),
+              _datoMovil('Última conexión', d.ultimaConexion != null ? formatoFecha.format(d.ultimaConexion!) : '-'),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _datoMovil(String etiqueta, String valor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(etiqueta.toUpperCase(), style: GoogleFonts.poppins(fontSize: 9.5, fontWeight: FontWeight.w700, color: Colors.grey.shade500, letterSpacing: 0.3)),
+        Text(valor, style: GoogleFonts.poppins(fontSize: 12.5, color: const Color(0xFF3F434A))),
+      ],
+    );
+  }
+
+  Widget _chipVersion(int version, bool desactualizado) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: desactualizado ? const Color(0xFFFCE4E4) : const Color(0xFFE8F8EE),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('v$version', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: desactualizado ? const Color(0xFFB91C1C) : const Color(0xFF16A34A))),
+          if (desactualizado) ...[
+            const SizedBox(width: 4),
+            const Icon(Icons.warning_amber_rounded, size: 13, color: Color(0xFFB91C1C)),
+          ],
+        ],
       ),
     );
   }

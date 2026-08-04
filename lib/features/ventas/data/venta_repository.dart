@@ -76,17 +76,17 @@ class VentaRepository {
     // antes de cada venta, y el registro de venta tiene que sentirse casi
     // instantáneo.
     Set<String> categoriasSinControlStock = const {},
-    // % de comisión bancaria si metodoPago == 'Tarjeta' (ver
-    // carrito_provider/_selectorComisionTarjeta en RegistrarVentaScreen,
-    // 2.9% o 3.5%). El cliente paga el total completo en el momento (no se
-    // le resta nada ahí, ni en el ticket que ve mientras cobra) pero el
-    // total que queda REGISTRADO en la venta -y por lo tanto lo que
-    // aparece después en el detalle, reimpresiones y reportes- ya sale con
-    // la comisión bancaria restada, igual que en el sistema viejo de la
-    // barbería (que sobreescribía el total registrado con el neto).
+    // % sugerido (2.9/3.5, solo referencia para calcular montoRecargoTarjeta
+    // en la UI) y monto real del recargo por pago con tarjeta cuando
+    // metodoPago == 'Tarjeta' (ver carrito_provider/_selectorComisionTarjeta
+    // en RegistrarVentaScreen). El cliente paga totalAPagar + este recargo
+    // (ver VentaModel.totalConRecargo), pero totalAPagar -y por lo tanto
+    // subtotal/impuesto/utilidad en todos los reportes- se guarda SIEMPRE
+    // limpio, sin el recargo mezclado: el recargo es solo un traslado del
+    // costo de procesamiento de la tarjeta, no ingreso real del negocio.
     double porcentajeTarjeta = 0,
+    double montoRecargoTarjeta = 0,
   }) async {
-    final totalRegistrado = metodoPago == 'Tarjeta' && porcentajeTarjeta > 0 ? redondearMoneda(totalAPagar * (1 - porcentajeTarjeta / 100)) : totalAPagar;
     final claveContador = _claveContador(tipoDocumento);
     final contadorRef = _colContadores.doc(claveContador);
     final ventaRef = _colVentas.doc();
@@ -161,7 +161,7 @@ class VentaRepository {
         'pagosMixtos': PagoDetalle.listaToMaps(pagosMixtos),
         'subtotal': subtotal,
         'impuesto': impuesto,
-        'totalAPagar': totalRegistrado,
+        'totalAPagar': totalAPagar,
         'condicion': condicion,
         'fechaVencimiento': fechaVencimiento != null ? Timestamp.fromDate(fechaVencimiento) : null,
         // 'fechaRegistro' es la fecha de negocio (el cajero la puede elegir
@@ -182,6 +182,7 @@ class VentaRepository {
         'descuentoGlobal': descuentoGlobal,
         'pendienteImpresion': false,
         'porcentajeTarjeta': metodoPago == 'Tarjeta' ? porcentajeTarjeta : 0,
+        'montoRecargoTarjeta': metodoPago == 'Tarjeta' ? montoRecargoTarjeta : 0,
       });
 
       for (final item in items) {
@@ -199,8 +200,8 @@ class VentaRepository {
           'documentoCliente': documentoCliente.isEmpty ? 'N/A' : documentoCliente,
           'nombreCliente': nombreCliente,
           'numeroDocumento': numeroDocumento,
-          'montoTotal': totalRegistrado,
-          'saldoPendiente': totalRegistrado,
+          'montoTotal': totalAPagar,
+          'saldoPendiente': totalAPagar,
           'fechaRegistro': Timestamp.fromDate(fechaRegistro),
           'fechaVencimiento': Timestamp.fromDate(fechaVencimiento ?? fechaRegistro),
         });
@@ -265,7 +266,7 @@ class VentaRepository {
       pagosMixtos: pagosMixtos,
       subtotal: subtotal,
       impuesto: impuesto,
-      totalAPagar: totalRegistrado,
+      totalAPagar: totalAPagar,
       condicion: condicion,
       fechaVencimiento: fechaVencimiento,
       fechaRegistro: fechaRegistro,
@@ -281,6 +282,7 @@ class VentaRepository {
         return costoReal != null ? item.copyWith(precioCompraUsado: costoReal) : item;
       }).toList(),
       porcentajeTarjeta: metodoPago == 'Tarjeta' ? porcentajeTarjeta : 0,
+      montoRecargoTarjeta: metodoPago == 'Tarjeta' ? montoRecargoTarjeta : 0,
     );
   }
 

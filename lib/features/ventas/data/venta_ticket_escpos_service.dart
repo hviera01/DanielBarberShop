@@ -77,15 +77,19 @@ class VentaTicketEscPosService {
       bytes += _filaTotal(generador, 'ISV 15%:', venta.impuesto);
     }
     bytes += _filaTotal(generador, 'TOTAL A PAGAR:', venta.totalAPagar, negrita: true);
+    if (venta.metodoPago == 'Tarjeta' && venta.montoRecargoTarjeta > 0) {
+      bytes += _filaTotal(generador, 'Recargo pago tarjeta:', venta.montoRecargoTarjeta);
+      bytes += _filaTotal(generador, 'TOTAL COBRADO:', venta.totalConRecargo, negrita: true);
+    }
     bytes += generador.hr();
 
-    bytes += generador.text('Son: ${convertirNumeroALetras(venta.totalAPagar)}');
+    bytes += generador.text('Son: ${convertirNumeroALetras(venta.totalConRecargo)}');
     if (venta.condicion != 'Credito') {
       if (venta.metodoPago == 'Efectivo') {
         bytes += generador.text('Efectivo: ${formatearMoneda(venta.montoPago)}');
         bytes += generador.text('Cambio: ${formatearMoneda(venta.montoCambio)}');
       } else if (venta.metodoPago == 'Tarjeta') {
-        bytes += generador.text('Pago con tarjeta: ${formatearMoneda(venta.totalAPagar)}');
+        bytes += generador.text('Pago con tarjeta: ${formatearMoneda(venta.totalConRecargo)}');
       } else if (venta.metodoPago == 'Transferencia') {
         bytes += generador.text('Transferencia');
       } else if (venta.metodoPago == 'Mixto') {

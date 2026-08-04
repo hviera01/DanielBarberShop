@@ -559,7 +559,18 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
                 flex: 6,
                 child: Padding(
                   padding: const EdgeInsets.only(right: 10),
-                  child: Text(p.nombre, softWrap: true, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(p.nombre, softWrap: true, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                      if (p.descripcion.trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(p.descripcion, softWrap: true, style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade500)),
+                        ),
+                    ],
+                  ),
                 ),
               ),
               Expanded(
@@ -632,6 +643,10 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(p.nombre, softWrap: true, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600)),
+                        if (p.descripcion.trim().isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(p.descripcion, softWrap: true, style: GoogleFonts.poppins(fontSize: 11.5, color: Colors.grey.shade500)),
+                        ],
                         const SizedBox(height: 2),
                         Text('${p.codigo} · ${mapaCategorias[p.idCategoria] ?? '-'}', softWrap: true, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade500)),
                       ],

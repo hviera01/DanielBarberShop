@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'item_venta_model.dart';
 import 'pago_detalle_model.dart';
+import '../../../core/utils/formato_moneda.dart';
 
 class VentaModel {
   final String id;
@@ -51,10 +52,15 @@ class VentaModel {
   // distinto de "false", que fuerza una sola hoja ORIGINAL sin importar esa
   // configuración.
   final bool? solicitudImpresionEsCopia;
-  // % de comisión bancaria si metodoPago == 'Tarjeta' (ver carrito_provider):
-  // el cliente paga/ve totalAPagar completo, esto es solo metadata para que
-  // los reportes de caja puedan calcular el neto que de verdad ingresó.
+  // % sugerido (solo referencia, ver carrito_provider) y monto real del
+  // recargo por pago con tarjeta si metodoPago == 'Tarjeta'. totalAPagar
+  // nunca incluye este monto (así Utilidades y demás reportes solo ven la
+  // venta real); el cliente paga totalAPagar + montoRecargoTarjeta, ver
+  // totalConRecargo.
   final double porcentajeTarjeta;
+  final double montoRecargoTarjeta;
+
+  double get totalConRecargo => redondearMoneda(totalAPagar + montoRecargoTarjeta);
 
   bool get estaAnulada => estado == 'Anulada';
 
@@ -95,6 +101,7 @@ class VentaModel {
       solicitudImpresionEnVivo: solicitudImpresionEnVivo,
       solicitudImpresionEsCopia: solicitudImpresionEsCopia,
       porcentajeTarjeta: porcentajeTarjeta,
+      montoRecargoTarjeta: montoRecargoTarjeta,
     );
   }
 
@@ -129,6 +136,7 @@ class VentaModel {
     this.solicitudImpresionEnVivo = false,
     this.solicitudImpresionEsCopia,
     this.porcentajeTarjeta = 0,
+    this.montoRecargoTarjeta = 0,
   });
 
   factory VentaModel.fromMap(String id, Map<String, dynamic> data, List<ItemVentaModel> detalle) {
@@ -163,6 +171,7 @@ class VentaModel {
       solicitudImpresionEnVivo: data['solicitudImpresionEnVivo'] ?? false,
       solicitudImpresionEsCopia: data['solicitudImpresionEsCopia'] as bool?,
       porcentajeTarjeta: (data['porcentajeTarjeta'] ?? 0).toDouble(),
+      montoRecargoTarjeta: (data['montoRecargoTarjeta'] ?? 0).toDouble(),
     );
   }
 }

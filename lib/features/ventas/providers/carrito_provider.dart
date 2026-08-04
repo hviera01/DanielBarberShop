@@ -51,13 +51,20 @@ class CarritoVentaState {
   final double pagoCon;
   final double cambio;
   final double descuentoGlobalPorcentaje;
-  // Comisión bancaria (%) cuando metodoPago == 'Tarjeta'. El cliente ve y
-  // paga el total completo (totalAPagar no cambia); esto solo se guarda
-  // como metadata de la venta para que reportes de caja puedan calcular el
-  // neto que realmente ingresó, sin mezclar ambos conceptos en un mismo
-  // campo (a diferencia del sistema viejo, que sobreescribía el total
-  // registrado con el neto).
+  // Recargo por pago con tarjeta cuando metodoPago == 'Tarjeta': a
+  // diferencia de cómo se venía haciendo antes -el cajero subía a mano el
+  // precio del servicio para que el total incluyera el recargo, lo que
+  // terminaba inflando también la comisión del barbero, calculada sobre ese
+  // mismo precio- ahora es un monto totalmente aparte que se SUMA al total
+  // a cobrar sin tocar nunca el precio de las líneas. La comisión del
+  // barbero (ver establecerBarberoLinea) sigue calculándose siempre sobre
+  // el precio real del servicio.
+  // porcentajeTarjeta solo elige el % sugerido (2.9/3.5) para calcular el
+  // monto automáticamente; el monto en sí (montoRecargoTarjeta) es lo que de
+  // verdad se guarda y se suma, y el cajero lo puede editar a mano después
+  // sin que se recalcule solo.
   final double porcentajeTarjeta;
+  final double montoRecargoTarjeta;
   // Desglose cuando metodoPago == 'Mixto' (ver PagoMixtoDialog). Vacío en
   // cualquier otro método.
   final List<PagoDetalle> pagosMixtos;
@@ -79,6 +86,7 @@ class CarritoVentaState {
     this.cambio = 0,
     this.descuentoGlobalPorcentaje = 0,
     this.porcentajeTarjeta = 0,
+    this.montoRecargoTarjeta = 0,
     this.pagosMixtos = const [],
   }) : fecha = fecha ?? DateTime.now();
 
@@ -123,6 +131,12 @@ class CarritoVentaState {
     return resto >= 0.90 ? base + 1 : base;
   }
 
+  // Lo que de verdad se le cobra al cliente cuando paga con tarjeta: el
+  // total de la venta más el recargo, aparte. totalAPagar (y todo lo que se
+  // guarda de la venta: subtotal, impuesto, comisiones) nunca incluye el
+  // recargo, para que Utilidades siga reflejando solo el negocio real.
+  double get totalConRecargo => redondearMoneda(totalAPagar + montoRecargoTarjeta);
+
   double get cantidadTotalProductos => items.fold<double>(0, (s, i) => s + i.cantidad);
 
   CarritoVentaState copyWith({
@@ -142,6 +156,7 @@ class CarritoVentaState {
     double? cambio,
     double? descuentoGlobalPorcentaje,
     double? porcentajeTarjeta,
+    double? montoRecargoTarjeta,
     List<PagoDetalle>? pagosMixtos,
   }) {
     return CarritoVentaState(
@@ -161,6 +176,7 @@ class CarritoVentaState {
       cambio: cambio ?? this.cambio,
       descuentoGlobalPorcentaje: descuentoGlobalPorcentaje ?? this.descuentoGlobalPorcentaje,
       porcentajeTarjeta: porcentajeTarjeta ?? this.porcentajeTarjeta,
+      montoRecargoTarjeta: montoRecargoTarjeta ?? this.montoRecargoTarjeta,
       pagosMixtos: pagosMixtos ?? this.pagosMixtos,
     );
   }
@@ -231,7 +247,15 @@ class CarritoVentaNotifier extends Notifier<CarritoVentaState> {
     state = state.copyWith(items: nuevos);
   }
 
-  void establecerPorcentajeTarjeta(double v) => state = state.copyWith(porcentajeTarjeta: v);
+  // Elegir un % sugerido recalcula el monto de recargo automáticamente
+  // (sobreescribe cualquier monto editado a mano antes) — es una elección
+  // deliberada del cajero, así que gana sobre lo que hubiera antes. Si
+  // después quiere ajustarlo, usa establecerMontoRecargoTarjeta.
+  void establecerPorcentajeTarjeta(double v) {
+    state = state.copyWith(porcentajeTarjeta: v, montoRecargoTarjeta: redondearMoneda(state.totalAPagar * v / 100));
+  }
+
+  void establecerMontoRecargoTarjeta(double v) => state = state.copyWith(montoRecargoTarjeta: v < 0 ? 0 : v);
 
   void quitarItem(int index) {
     final nuevos = [...state.items]..removeAt(index);
@@ -292,6 +316,7 @@ class CarritoVentaNotifier extends Notifier<CarritoVentaState> {
     state = state.copyWith(
       metodoPago: v,
       porcentajeTarjeta: v == 'Tarjeta' ? state.porcentajeTarjeta : 0,
+      montoRecargoTarjeta: v == 'Tarjeta' ? state.montoRecargoTarjeta : 0,
       pagosMixtos: v == 'Mixto' ? state.pagosMixtos : const [],
     );
   }
