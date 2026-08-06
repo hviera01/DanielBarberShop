@@ -11,6 +11,7 @@ import '../../../../core/utils/texto_utils.dart';
 import '../../../../core/utils/formato_moneda.dart';
 import '../../../../core/utils/codigo_barras_utils.dart';
 import '../../../../core/widgets/barcode_scanner_screen.dart';
+import '../../../../core/widgets/imagen_zoom_dialog.dart';
 
 /// Resultado de elegir un producto (y el nivel de precio con el que se va a
 /// vender) desde el buscador.
@@ -518,9 +519,14 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
         Expanded(flex: 3, child: Text('Categoría', style: estilo)),
         Expanded(flex: 3, child: Text('Precio', textAlign: TextAlign.right, style: estilo)),
         Expanded(flex: 2, child: _encabezadoOrdenable('Existencia', 'existencia', estilo)),
+        const SizedBox(width: 32),
         const SizedBox(width: 40),
       ],
     );
+  }
+
+  void _verFoto(ProductoModel p) {
+    showDialog(context: context, builder: (context) => ImagenZoomDialog(url: p.imagenUrl));
   }
 
   // Tocar el nombre de la columna ordena por esa columna (ascendente); si
@@ -635,6 +641,16 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
                 ),
               ),
               SizedBox(
+                width: 32,
+                child: p.imagenUrl.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Ver foto',
+                        icon: const Icon(Icons.photo_outlined, size: 18, color: Color(0xFF0F1B3D)),
+                        onPressed: () => _verFoto(p),
+                      ),
+              ),
+              SizedBox(
                 width: 40,
                 child: IconButton(
                   tooltip: 'Editar producto',
@@ -703,6 +719,12 @@ class _BuscarProductoDialogState extends ConsumerState<BuscarProductoDialog> {
               Row(
                 children: [
                   Expanded(child: _celdaPrecio(p)),
+                  if (p.imagenUrl.isNotEmpty)
+                    IconButton(
+                      tooltip: 'Ver foto',
+                      icon: const Icon(Icons.photo_outlined, size: 18, color: Color(0xFF0F1B3D)),
+                      onPressed: () => _verFoto(p),
+                    ),
                   IconButton(
                     tooltip: 'Editar producto',
                     icon: Icon(Icons.edit_outlined, size: 18, color: Colors.grey.shade500),
