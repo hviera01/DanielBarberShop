@@ -34,10 +34,13 @@ class CompraCreditoRepository {
     });
   }
 
-  Stream<List<AbonoCompraModel>> obtenerAbonos(String idCompra) {
-    return _col.doc(idCompra).collection('abonosCompra').orderBy('fecha', descending: true).snapshots().map((snap) {
-      return snap.docs.map((d) => AbonoCompraModel.fromMap(d.id, d.data())).toList();
-    });
+  /// Solo lo consume HistorialAbonosCompraDialog, un diálogo de solo lectura
+  /// que se abre y se cierra -registrar un abono nuevo es un diálogo aparte
+  /// (RegistrarAbonoCompraDialog)-, así que no hace falta un listener en
+  /// vivo: ver el mismo criterio en ProductoRepository.obtenerHistorialStock.
+  Future<List<AbonoCompraModel>> obtenerAbonos(String idCompra) async {
+    final snap = await _col.doc(idCompra).collection('abonosCompra').orderBy('fecha', descending: true).get();
+    return snap.docs.map((d) => AbonoCompraModel.fromMap(d.id, d.data())).toList();
   }
 
   Future<void> crearCreditoManual({

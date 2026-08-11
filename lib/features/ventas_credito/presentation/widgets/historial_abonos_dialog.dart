@@ -14,7 +14,7 @@ class HistorialAbonosDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final abonosAsync = ref.watch(abonosStreamProvider(credito.id));
+    final abonosAsync = ref.watch(abonosProvider(credito.id));
     final tamano = MediaQuery.of(context).size;
     final esMovil = tamano.width < 720;
     final anchoDialog = esMovil ? tamano.width - 24 : (tamano.width - 48).clamp(0, 1100).toDouble();

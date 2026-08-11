@@ -9,7 +9,10 @@ final ventasCreditoStreamProvider = StreamProvider<List<VentaCreditoModel>>((ref
   return ref.watch(ventaCreditoRepositoryProvider).obtenerCreditos();
 });
 
-final abonosStreamProvider = StreamProvider.family<List<AbonoModel>, String>((ref, idCredito) {
+// FutureProvider.autoDispose (no StreamProvider): solo alimenta un diálogo de
+// solo lectura (HistorialAbonosDialog) que se abre y cierra; ver el mismo
+// criterio en productos_provider.dart (historialStockProvider y compañía).
+final abonosProvider = FutureProvider.autoDispose.family<List<AbonoModel>, String>((ref, idCredito) {
   return ref.watch(ventaCreditoRepositoryProvider).obtenerAbonos(idCredito);
 });
 

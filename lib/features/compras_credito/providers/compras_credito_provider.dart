@@ -9,7 +9,10 @@ final comprasCreditoStreamProvider = StreamProvider<List<CompraCreditoModel>>((r
   return ref.watch(compraCreditoRepositoryProvider).obtenerCompras();
 });
 
-final abonosCompraStreamProvider = StreamProvider.family<List<AbonoCompraModel>, String>((ref, idCompra) {
+// FutureProvider.autoDispose (no StreamProvider): solo alimenta un diálogo de
+// solo lectura (HistorialAbonosCompraDialog) que se abre y cierra; ver el
+// mismo criterio en productos_provider.dart (historialStockProvider y cía.).
+final abonosCompraProvider = FutureProvider.autoDispose.family<List<AbonoCompraModel>, String>((ref, idCompra) {
   return ref.watch(compraCreditoRepositoryProvider).obtenerAbonos(idCompra);
 });
 
