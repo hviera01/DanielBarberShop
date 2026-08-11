@@ -128,20 +128,22 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
         );
   }
 
-  Future<void> _elegirFecha(bool esInicio) async {
-    final elegida = await showDatePicker(
+  /// Antes cada campo (Desde/Hasta) abría su propio showDatePicker y
+  /// aplicaba el filtro al toque: elegir solo "Desde" ya refiltraba con el
+  /// "Hasta" viejo, mostrando resultados a medio armar. Con showDateRangePicker
+  /// el usuario elige ambas fechas en un solo diálogo y el filtro se aplica
+  /// una sola vez, recién al confirmar el rango completo.
+  Future<void> _elegirRangoFechas() async {
+    final rango = await showDateRangePicker(
       context: context,
-      initialDate: esInicio ? _fechaInicio : _fechaFin,
+      initialDateRange: DateTimeRange(start: _fechaInicio, end: _fechaFin),
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
-    if (elegida == null) return;
+    if (rango == null) return;
     setState(() {
-      if (esInicio) {
-        _fechaInicio = elegida;
-      } else {
-        _fechaFin = elegida;
-      }
+      _fechaInicio = rango.start;
+      _fechaFin = rango.end;
     });
   }
 
@@ -187,8 +189,8 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
                     runSpacing: 10,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      SizedBox(width: esMovil ? constraints.maxWidth : 150, child: _campoFecha('Desde', _fechaInicio, () => _elegirFecha(true))),
-                      SizedBox(width: esMovil ? constraints.maxWidth : 150, child: _campoFecha('Hasta', _fechaFin, () => _elegirFecha(false))),
+                      SizedBox(width: esMovil ? constraints.maxWidth : 150, child: _campoFecha('Desde', _fechaInicio, _elegirRangoFechas)),
+                      SizedBox(width: esMovil ? constraints.maxWidth : 150, child: _campoFecha('Hasta', _fechaFin, _elegirRangoFechas)),
                       if (!esBarbero) SizedBox(width: esMovil ? constraints.maxWidth : 200, child: _selectorBarbero(barberosAsync)),
                       SizedBox(width: esMovil ? constraints.maxWidth : 260, child: _buscador()),
                       FilledButton.icon(
