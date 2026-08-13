@@ -1,8 +1,12 @@
 import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show TextInput;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/utils/face_id_storage.dart';
+import '../../../../core/utils/webauthn.dart';
+import '../../../../core/widgets/face_id_icon.dart';
 import '../../providers/auth_provider.dart';
 
 // Solo el navegador de un celular (no la PC, no la app de escritorio):
@@ -24,6 +28,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _claveController = TextEditingController();
   bool _ocultarClave = true;
 
+  // Id (base64url) del credencial de Face ID/Touch ID ya activado en este
+  // navegador, o null si todavía no se activó acá. Se carga async en
+  // initState porque SharedPreferences no es síncrono la primera vez.
+  String? _credencialFaceId;
+  bool _verificandoFaceId = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_esWebMovil) _cargarCredencialFaceId();
+  }
+
+  Future<void> _cargarCredencialFaceId() async {
+    final credencial = await credencialFaceIdGuardada();
+    if (mounted) setState(() => _credencialFaceId = credencial);
+  }
+
   @override
   void dispose() {
     _codigoController.dispose();
@@ -31,11 +52,55 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  void _iniciarSesion() {
+  Future<void> _iniciarSesion() async {
     final codigo = _codigoController.text.trim();
     final clave = _claveController.text.trim();
     if (codigo.isEmpty || clave.isEmpty) return;
-    ref.read(authProvider.notifier).login(codigo, clave);
+    await ref.read(authProvider.notifier).login(codigo, clave);
+    if (!mounted) return;
+    final usuario = ref.read(authProvider).usuario;
+    // El login falló: el mensaje de error ya se muestra solo (ver
+    // authState.error más abajo), acá no hay nada más que hacer.
+    if (usuario == null) return;
+    // Le avisa al navegador que el usuario ya terminó de "llenar el
+    // formulario", que es la señal que usa para ofrecer guardar el usuario
+    // (código de acceso, ver autofillHints más abajo) y la contraseña en su
+    // gestor nativo (Guardacontraseñas de iOS, etc.) -sin esto, en una app
+    // sin un <form> real como esta, ese aviso puede no llegar nunca-.
+    TextInput.finishAutofillContext();
+    // La activación de Face ID en sí ya NO se ofrece acá (ver Negocio >
+    // "Face ID en este celular"): justo después de un login exitoso,
+    // AuthGate reemplaza esta pantalla por AppShell casi de inmediato, y
+    // cualquier await de por medio (SharedPreferences, WebAuthn) le daba
+    // tiempo de sobra a esa transición para desmontar LoginScreen antes de
+    // llegar a mostrar nada -por eso a veces "no pasaba nada" al loguearse-.
+    // Negocio es una pantalla estable que no se cierra sola, así que ahí sí
+    // se puede activar con confianza.
+  }
+
+  Future<void> _entrarConFaceId() async {
+    final credencial = _credencialFaceId;
+    if (credencial == null || _verificandoFaceId) return;
+    setState(() => _verificandoFaceId = true);
+    try {
+      final verificado = await webAuthnVerificar(credencial);
+      if (!verificado) return;
+      final credenciales = await credencialesLoginGuardadas();
+      if (credenciales == null) return;
+      if (!mounted) return;
+      await ref.read(authProvider.notifier).login(credenciales.codigo, credenciales.clave);
+    } finally {
+      if (mounted) setState(() => _verificandoFaceId = false);
+    }
+  }
+
+  // Por si el celular no es el del usuario que activó Face ID acá antes (un
+  // celular compartido, por ejemplo), o simplemente ya no lo quiere más:
+  // borra lo guardado en este navegador y vuelve a mostrar el formulario
+  // normal de código+clave.
+  Future<void> _olvidarFaceId() async {
+    await olvidarCredencialesFaceId();
+    if (mounted) setState(() => _credencialFaceId = null);
   }
 
   @override
@@ -144,46 +209,54 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                           ),
                           const SizedBox(height: 34),
-                          TextField(
-                            controller: _codigoController,
-                            keyboardType: _esWebMovil ? TextInputType.number : TextInputType.text,
-                            style: GoogleFonts.poppins(fontSize: 14),
-                            decoration: InputDecoration(
-                              labelText: 'Código de acceso',
-                              labelStyle: GoogleFonts.poppins(fontSize: 13),
-                              prefixIcon: const Icon(Icons.badge_outlined, size: 20),
-                              filled: true,
-                              fillColor: const Color(0xFFE8EAF0),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          TextField(
-                            controller: _claveController,
-                            obscureText: _ocultarClave,
-                            keyboardType: _esWebMovil ? TextInputType.number : TextInputType.text,
-                            style: GoogleFonts.poppins(fontSize: 14),
-                            onSubmitted: (_) => _iniciarSesion(),
-                            decoration: InputDecoration(
-                              labelText: 'Contraseña',
-                              labelStyle: GoogleFonts.poppins(fontSize: 13),
-                              prefixIcon: const Icon(Icons.lock_outline, size: 20),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _ocultarClave ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                                  size: 20,
+                          AutofillGroup(
+                            child: Column(
+                              children: [
+                                TextField(
+                                  controller: _codigoController,
+                                  keyboardType: _esWebMovil ? TextInputType.number : TextInputType.text,
+                                  autofillHints: const [AutofillHints.username],
+                                  style: GoogleFonts.poppins(fontSize: 14),
+                                  decoration: InputDecoration(
+                                    labelText: 'Código de acceso',
+                                    labelStyle: GoogleFonts.poppins(fontSize: 13),
+                                    prefixIcon: const Icon(Icons.badge_outlined, size: 20),
+                                    filled: true,
+                                    fillColor: const Color(0xFFE8EAF0),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                  ),
                                 ),
-                                onPressed: () => setState(() => _ocultarClave = !_ocultarClave),
-                              ),
-                              filled: true,
-                              fillColor: const Color(0xFFE8EAF0),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide.none,
-                              ),
+                                const SizedBox(height: 18),
+                                TextField(
+                                  controller: _claveController,
+                                  obscureText: _ocultarClave,
+                                  keyboardType: _esWebMovil ? TextInputType.number : TextInputType.text,
+                                  autofillHints: const [AutofillHints.password],
+                                  style: GoogleFonts.poppins(fontSize: 14),
+                                  onSubmitted: (_) => _iniciarSesion(),
+                                  decoration: InputDecoration(
+                                    labelText: 'Contraseña',
+                                    labelStyle: GoogleFonts.poppins(fontSize: 13),
+                                    prefixIcon: const Icon(Icons.lock_outline, size: 20),
+                                    suffixIcon: IconButton(
+                                      icon: Icon(
+                                        _ocultarClave ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                                        size: 20,
+                                      ),
+                                      onPressed: () => setState(() => _ocultarClave = !_ocultarClave),
+                                    ),
+                                    filled: true,
+                                    fillColor: const Color(0xFFE8EAF0),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           if (authState.error != null) ...[
@@ -233,6 +306,42 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     ),
                             ),
                           ),
+                          if (_esWebMovil && _credencialFaceId != null) ...[
+                            const SizedBox(height: 22),
+                            Center(
+                              child: Column(
+                                children: [
+                                  Material(
+                                    color: const Color(0xFFE8EAF0),
+                                    shape: const CircleBorder(),
+                                    child: InkWell(
+                                      customBorder: const CircleBorder(),
+                                      onTap: _verificandoFaceId ? null : _entrarConFaceId,
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(14),
+                                        child: _verificandoFaceId
+                                            ? const SizedBox(
+                                                width: 26,
+                                                height: 26,
+                                                child: CircularProgressIndicator(strokeWidth: 2.4, color: Color(0xFF0F1B3D)),
+                                              )
+                                            : const FaceIdIcon(size: 26, color: Color(0xFF0F1B3D)),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text('Entrar con Face ID', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600)),
+                                  TextButton(
+                                    onPressed: _olvidarFaceId,
+                                    child: Text(
+                                      '¿No sos vos? Olvidar Face ID',
+                                      style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 20),
                           Text(
                             "DANIEL'S BARBER SHOP · Estilo & Tradición",
