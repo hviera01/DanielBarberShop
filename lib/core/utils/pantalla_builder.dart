@@ -42,6 +42,14 @@ Widget construirPantalla(String moduleKey, String titulo, IconData icono, String
         overrides: [carritoVentaProvider.overrideWith(() => CarritoVentaNotifier())],
         child: RegistrarVentaScreen(tabId: tabId),
       );
+    case 'ventas_buscar_producto':
+      // Igual que 'ventas_registrar', pero con el diálogo de búsqueda
+      // abierto de entrada (ver HomeScreen: atajo "Buscar Producto", solo
+      // web móvil).
+      return ProviderScope(
+        overrides: [carritoVentaProvider.overrideWith(() => CarritoVentaNotifier())],
+        child: RegistrarVentaScreen(tabId: tabId, autoAbrirBusqueda: true),
+      );
     case 'ventas_detalle':
       return const DetalleVentaScreen(esDialogo: false);
     case 'compras_registrar':
