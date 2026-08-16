@@ -121,6 +121,16 @@ class NegocioRepository {
     _invalidarCache();
   }
 
+  Future<void> establecerClaveVaciarInventario(String clave) async {
+    await _doc.set({'claveVaciarInventarioHash': hashClave(clave)}, SetOptions(merge: true));
+    _invalidarCache();
+  }
+
+  Future<void> quitarClaveVaciarInventario() async {
+    await _doc.set({'claveVaciarInventarioHash': ''}, SetOptions(merge: true));
+    _invalidarCache();
+  }
+
   Future<void> actualizarImpresoraTermica(String url, String nombre) async {
     await _doc.set({'impresoraTermicaUrl': url, 'impresoraTermicaNombre': nombre}, SetOptions(merge: true));
     _invalidarCache();

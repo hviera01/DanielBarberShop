@@ -146,6 +146,45 @@ class ProductoRepository {
     await _col.doc(id).delete();
   }
 
+  /// Borra todos los productos que NO son servicios (los servicios -cortes,
+  /// tintes, etc.- nunca se tocan), sin importar si están activos o
+  /// inactivos: pensado para "empezar de cero" el catálogo cuando el negocio
+  /// quiere reingresar todo el inventario. Las ventas, compras y comisiones
+  /// ya registradas guardan su propia copia (snapshot) del producto en el
+  /// momento en que se vendió/compró -ver ItemVentaModel/ItemCompraModel-,
+  /// así que no se ven afectadas por este borrado. También se borran las
+  /// subcolecciones propias de cada producto (historial, lotes de costo,
+  /// etc.) para no dejar basura huérfana en Firestore. Devuelve cuántos
+  /// productos se borraron.
+  Future<int> vaciarProductos() async {
+    final snap = await _col.where('esServicio', isEqualTo: false).get();
+    const subcolecciones = ['historial', 'historialVentas', 'historialPreciosCompra', 'lotes'];
+
+    Future<void> borrarEnLotes(List<DocumentReference<Map<String, dynamic>>> refs) async {
+      var batch = FirebaseFirestore.instance.batch();
+      var enBatch = 0;
+      for (final ref in refs) {
+        batch.delete(ref);
+        enBatch++;
+        if (enBatch >= 400) {
+          await batch.commit();
+          batch = FirebaseFirestore.instance.batch();
+          enBatch = 0;
+        }
+      }
+      if (enBatch > 0) await batch.commit();
+    }
+
+    for (final doc in snap.docs) {
+      for (final nombre in subcolecciones) {
+        final sub = await doc.reference.collection(nombre).get();
+        if (sub.docs.isNotEmpty) await borrarEnLotes(sub.docs.map((d) => d.reference).toList());
+      }
+    }
+    await borrarEnLotes(snap.docs.map((d) => d.reference).toList());
+    return snap.docs.length;
+  }
+
   /// Crea o actualiza en lote los productos de una importación desde Excel.
   /// Empareja por [FilaImportacionProducto.codigo]: si ya existe un producto
   /// con ese código se actualiza (sin tocar código de barras ni niveles de

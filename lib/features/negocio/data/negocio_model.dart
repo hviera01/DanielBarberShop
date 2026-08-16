@@ -50,6 +50,12 @@ class NegocioModel {
   final String logoBnBase64;
   final String claveEspecialHash;
   final Map<String, bool> permisos;
+  // Clave dedicada exclusivamente al botón "Vaciar inventario" (borrar todos
+  // los productos de golpe) — distinta de claveEspecialHash a propósito: esa
+  // es compartida entre varios permisos configurables, y esta acción es tan
+  // destructiva que el negocio pidió una clave aparte, solo para esto. Vacía
+  // significa que el botón no pide ninguna clave.
+  final String claveVaciarInventarioHash;
   final String impresoraTermicaUrl;
   final String impresoraTermicaNombre;
   final String impresoraEtiquetasUrl;
@@ -95,6 +101,7 @@ class NegocioModel {
     this.logoBnBase64 = '',
     this.claveEspecialHash = '',
     this.permisos = const {},
+    this.claveVaciarInventarioHash = '',
     this.impresoraTermicaUrl = '',
     this.impresoraTermicaNombre = '',
     this.impresoraEtiquetasUrl = '',
@@ -108,6 +115,8 @@ class NegocioModel {
   });
 
   bool get tieneClaveEspecial => claveEspecialHash.isNotEmpty;
+
+  bool get tieneClaveVaciarInventario => claveVaciarInventarioHash.isNotEmpty;
 
   bool tienePermiso(String key) => permisos[key] == true;
 
@@ -129,6 +138,7 @@ class NegocioModel {
       logoBnBase64: data['logoBnBase64'] ?? '',
       claveEspecialHash: data['claveEspecialHash'] ?? '',
       permisos: Map<String, bool>.from(data['permisos'] ?? {}),
+      claveVaciarInventarioHash: data['claveVaciarInventarioHash'] ?? '',
       impresoraTermicaUrl: data['impresoraTermicaUrl'] ?? '',
       impresoraTermicaNombre: data['impresoraTermicaNombre'] ?? '',
       impresoraEtiquetasUrl: data['impresoraEtiquetasUrl'] ?? '',
@@ -159,6 +169,7 @@ class NegocioModel {
       'logoBnBase64': logoBnBase64,
       'claveEspecialHash': claveEspecialHash,
       'permisos': permisos,
+      'claveVaciarInventarioHash': claveVaciarInventarioHash,
       'impresoraTermicaUrl': impresoraTermicaUrl,
       'impresoraTermicaNombre': impresoraTermicaNombre,
       'impresoraEtiquetasUrl': impresoraEtiquetasUrl,
@@ -188,6 +199,7 @@ class NegocioModel {
     String? logoBnBase64,
     String? claveEspecialHash,
     Map<String, bool>? permisos,
+    String? claveVaciarInventarioHash,
     String? impresoraTermicaUrl,
     String? impresoraTermicaNombre,
     String? impresoraEtiquetasUrl,
@@ -215,6 +227,7 @@ class NegocioModel {
       logoBnBase64: logoBnBase64 ?? this.logoBnBase64,
       claveEspecialHash: claveEspecialHash ?? this.claveEspecialHash,
       permisos: permisos ?? this.permisos,
+      claveVaciarInventarioHash: claveVaciarInventarioHash ?? this.claveVaciarInventarioHash,
       impresoraTermicaUrl: impresoraTermicaUrl ?? this.impresoraTermicaUrl,
       impresoraTermicaNombre: impresoraTermicaNombre ?? this.impresoraTermicaNombre,
       impresoraEtiquetasUrl: impresoraEtiquetasUrl ?? this.impresoraEtiquetasUrl,

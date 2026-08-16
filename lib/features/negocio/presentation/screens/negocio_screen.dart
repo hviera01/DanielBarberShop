@@ -58,6 +58,7 @@ class _NegocioFormState extends ConsumerState<_NegocioForm> {
   final _rangoDesdeController = TextEditingController();
   final _rangoHastaController = TextEditingController();
   final _claveController = TextEditingController();
+  final _claveVaciarController = TextEditingController();
   final _ipRedController = TextEditingController();
   final _puertoRedController = TextEditingController();
   final _ctrlProximoFactura = TextEditingController();
@@ -67,6 +68,7 @@ class _NegocioFormState extends ConsumerState<_NegocioForm> {
   late Map<String, bool> _permisos;
   bool _guardando = false;
   bool _guardandoClave = false;
+  bool _guardandoClaveVaciar = false;
   bool _guardandoRed = false;
   bool _probandoRed = false;
   int? _proximoFacturaActual;
@@ -289,6 +291,7 @@ class _NegocioFormState extends ConsumerState<_NegocioForm> {
     _rangoDesdeController.dispose();
     _rangoHastaController.dispose();
     _claveController.dispose();
+    _claveVaciarController.dispose();
     _ipRedController.dispose();
     _puertoRedController.dispose();
     _ctrlProximoFactura.dispose();
@@ -369,6 +372,35 @@ class _NegocioFormState extends ConsumerState<_NegocioForm> {
     }
   }
 
+  Future<void> _guardarClaveVaciar() async {
+    final clave = _claveVaciarController.text.trim();
+    if (clave.length < 4) {
+      setState(() => _error = 'La clave debe tener al menos 4 caracteres');
+      return;
+    }
+    setState(() {
+      _guardandoClaveVaciar = true;
+      _error = null;
+    });
+    try {
+      await ref.read(negocioRepositoryProvider).establecerClaveVaciarInventario(clave);
+      _claveVaciarController.clear();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clave de "Vaciar inventario" actualizada')));
+    } finally {
+      if (mounted) setState(() => _guardandoClaveVaciar = false);
+    }
+  }
+
+  Future<void> _quitarClaveVaciar() async {
+    setState(() => _guardandoClaveVaciar = true);
+    try {
+      await ref.read(negocioRepositoryProvider).quitarClaveVaciarInventario();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clave de "Vaciar inventario" eliminada')));
+    } finally {
+      if (mounted) setState(() => _guardandoClaveVaciar = false);
+    }
+  }
+
   void _alternarPermiso(String key, bool valor) {
     setState(() => _permisos[key] = valor);
     ref.read(negocioRepositoryProvider).actualizarPermisos(_permisos);
@@ -443,6 +475,8 @@ class _NegocioFormState extends ConsumerState<_NegocioForm> {
               SliverToBoxAdapter(child: _tarjetaDatos(esMovil)),
               SliverToBoxAdapter(child: const SizedBox(height: 18)),
               SliverToBoxAdapter(child: _tarjetaPermisos(esMovil, tieneClave)),
+              SliverToBoxAdapter(child: const SizedBox(height: 18)),
+              SliverToBoxAdapter(child: _tarjetaClaveVaciarInventario(esMovil, widget.modelo.tieneClaveVaciarInventario)),
               SliverToBoxAdapter(child: const SizedBox(height: 18)),
               SliverToBoxAdapter(child: _tarjetaImpresoras(esMovil)),
               SliverToBoxAdapter(child: const SizedBox(height: 18)),
@@ -675,6 +709,73 @@ class _NegocioFormState extends ConsumerState<_NegocioForm> {
           const SizedBox(height: 6),
           ...PermisosEspeciales.etiquetas.entries.map(
             (entrada) => _filaPermiso(entrada.key, entrada.value, PermisosEspeciales.descripciones[entrada.key] ?? '', tieneClave),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Clave dedicada exclusivamente a "Vaciar inventario" (ver InventarioScreen):
+  // a diferencia de _tarjetaPermisos (una clave compartida entre varios
+  // permisos configurables), esta es una clave aparte que solo sirve para
+  // ese botón, porque es una acción demasiado destructiva -borra todos los
+  // productos del catálogo de una vez- como para compartir clave con otras
+  // acciones más comunes.
+  Widget _tarjetaClaveVaciarInventario(bool esMovil, bool tieneClave) {
+    return _tarjeta(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _tituloSeccion('Clave para "Vaciar inventario"', Icons.delete_sweep_outlined),
+          const SizedBox(height: 6),
+          Text(
+            'Clave exclusiva para el botón "Vaciar inventario" (borra de un golpe todos los productos, sin tocar los servicios). Es independiente de la clave especial de arriba. Si no se configura, el botón solo pide la confirmación normal.',
+            style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 18),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 10,
+            children: [
+              SizedBox(
+                width: esMovil ? double.infinity : 260,
+                child: TextField(
+                  controller: _claveVaciarController,
+                  obscureText: true,
+                  style: GoogleFonts.poppins(fontSize: 13.5),
+                  decoration: _decoracion(tieneClave ? 'Nueva clave' : 'Definir clave'),
+                ),
+              ),
+              SizedBox(
+                width: esMovil ? double.infinity : null,
+                child: FilledButton(
+                  onPressed: _guardandoClaveVaciar ? null : _guardarClaveVaciar,
+                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF1A1A1A), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  child: Text('Guardar clave', style: GoogleFonts.poppins(fontSize: 13, color: Colors.white)),
+                ),
+              ),
+              if (tieneClave)
+                SizedBox(
+                  width: esMovil ? double.infinity : null,
+                  child: OutlinedButton(
+                    onPressed: _guardandoClaveVaciar ? null : _quitarClaveVaciar,
+                    style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF0F1B3D), side: const BorderSide(color: Color(0xFFF3B9B9)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    child: Text('Quitar clave', style: GoogleFonts.poppins(fontSize: 13)),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(tieneClave ? Icons.check_circle : Icons.info_outline, size: 15, color: tieneClave ? const Color(0xFF16A34A) : Colors.grey.shade500),
+              const SizedBox(width: 6),
+              Text(
+                tieneClave ? 'Clave activa: se pedirá antes de vaciar el inventario' : 'No hay clave configurada para este botón',
+                style: GoogleFonts.poppins(fontSize: 12, color: tieneClave ? const Color(0xFF16A34A) : Colors.grey.shade500),
+              ),
+            ],
           ),
         ],
       ),

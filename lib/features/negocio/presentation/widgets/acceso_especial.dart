@@ -22,6 +22,23 @@ Future<bool> verificarAccesoEspecial(BuildContext context, WidgetRef ref, String
   return ok ?? false;
 }
 
+/// Pide la clave que hashea a [hashEsperado] antes de continuar. A diferencia
+/// de [verificarAccesoEspecial] (que resuelve el hash desde la clave especial
+/// compartida + el mapa de permisos configurables del negocio), esta variante
+/// sirve para una clave dedicada a una sola acción -por ejemplo, "Vaciar
+/// inventario" en InventarioScreen, que usa su propio hash aparte-. Si
+/// [hashEsperado] está vacío (no se configuró ninguna clave para esa acción)
+/// no pide nada y deja continuar.
+Future<bool> verificarClaveDedicada(BuildContext context, NegocioRepository repo, String hashEsperado) async {
+  if (hashEsperado.isEmpty) return true;
+  final ok = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => _ClaveEspecialDialog(hashEsperado: hashEsperado, repo: repo),
+  );
+  return ok ?? false;
+}
+
 class _ClaveEspecialDialog extends StatefulWidget {
   final String hashEsperado;
   final NegocioRepository repo;

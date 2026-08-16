@@ -40,10 +40,15 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
   String? _columnaOrden;
   bool _ordenAscendente = false;
   bool _precioConIsv = true;
+  // true = solo activos (default), false = solo inactivos. Un producto
+  // desactivado (ver ProductoFormDialog) deja de listarse acá hasta que se
+  // reactive o se cambie a "Inactivos".
+  bool _soloActivos = true;
   // Cuando la búsqueda viene de escanear un código de barras se filtra por
   // coincidencia exacta de código, no con el buscador difuso (que con
   // códigos largos puede "acercarse" a varios productos distintos).
   bool _busquedaPorCodigoBarras = false;
+  bool _vaciando = false;
   List<ProductoModel> _listaActual = [];
 
   // Cachea el resultado del filtro/orden: sin esto, cada setState (por
@@ -57,6 +62,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
   bool? _busquedaPorCodigoBarrasCacheada;
   String? _columnaOrdenCacheada;
   bool? _ordenAscendenteCacheado;
+  bool? _soloActivosCacheado;
   List<ProductoModel> _listaCacheada = [];
 
   /// Precio de venta a mostrar según la vista elegida (con o sin ISV). El
@@ -178,6 +184,68 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
       context: context,
       builder: (context) => const ImportarInventarioDialog(),
     );
+  }
+
+  /// Borra de golpe todos los productos (no los servicios) para que el
+  /// negocio pueda reingresar el catálogo desde cero. Las ventas, compras y
+  /// comisiones ya registradas no se ven afectadas: guardan su propio
+  /// snapshot del producto, no una referencia viva al catálogo.
+  Future<void> _vaciarInventario() async {
+    final productos = ref.read(productosStreamProvider).value ?? [];
+    final cantidad = productos.where((p) => !p.esServicio).length;
+    if (cantidad == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay productos para vaciar (los servicios no se borran)')),
+      );
+      return;
+    }
+
+    final repoNegocio = ref.read(negocioRepositoryProvider);
+    final negocio = await repoNegocio.obtenerNegocioActual();
+    if (!mounted) return;
+    final autorizado = await verificarClaveDedicada(context, repoNegocio, negocio.claveVaciarInventarioHash);
+    if (!autorizado || !mounted) return;
+
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Vaciar inventario', style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
+        content: Text(
+          'Se van a borrar $cantidad producto${cantidad == 1 ? '' : 's'} del inventario. Los servicios no se tocan. '
+          'Esta acción no se puede deshacer. Las ventas, compras y comisiones ya registradas no se ven afectadas: '
+          'siguen mostrando los productos tal como quedaron guardados en su momento.',
+          style: GoogleFonts.poppins(fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Cancelar', style: GoogleFonts.poppins())),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Vaciar inventario', style: GoogleFonts.poppins()),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true || !mounted) return;
+
+    setState(() => _vaciando = true);
+    try {
+      final borrados = await ref.read(productoRepositoryProvider).vaciarProductos();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Se borraron $borrados producto${borrados == 1 ? '' : 's'} del inventario'), showCloseIcon: true),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', '')), showCloseIcon: true),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _vaciando = false);
+    }
   }
 
   Future<void> _exportarExcel(Map<String, String> mapaCategorias) async {
@@ -308,10 +376,11 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
         _busquedaCacheada == busqueda &&
         _busquedaPorCodigoBarrasCacheada == _busquedaPorCodigoBarras &&
         _columnaOrdenCacheada == _columnaOrden &&
-        _ordenAscendenteCacheado == _ordenAscendente) {
+        _ordenAscendenteCacheado == _ordenAscendente &&
+        _soloActivosCacheado == _soloActivos) {
       return _listaCacheada;
     }
-    var lista = productos;
+    var lista = productos.where((p) => p.estado == _soloActivos).toList();
     if (vista == 'bajo') {
       lista = lista.where((p) => p.stock < 3).toList();
     }
@@ -337,6 +406,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     _busquedaPorCodigoBarrasCacheada = _busquedaPorCodigoBarras;
     _columnaOrdenCacheada = _columnaOrden;
     _ordenAscendenteCacheado = _ordenAscendente;
+    _soloActivosCacheado = _soloActivos;
     _listaCacheada = lista;
     return lista;
   }
@@ -451,6 +521,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                         child: _selectorVista(vista),
                       ),
                       _selectorPrecioIsv(),
+                      _selectorEstado(),
                       SizedBox(
                         width: esMovil ? constraints.maxWidth : 340,
                         child: _buscador(busqueda),
@@ -485,6 +556,27 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: const Color(0xFF1A1A1A),
                           side: const BorderSide(color: Color(0xFFB6BCC7)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 14,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _vaciando ? null : _vaciarInventario,
+                        icon: _vaciando
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red))
+                            : const Icon(Icons.delete_sweep_outlined, size: 18),
+                        label: Text(
+                          'Vaciar inventario',
+                          style: GoogleFonts.poppins(fontSize: 13),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red.shade700,
+                          side: BorderSide(color: Colors.red.shade200),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 18,
                             vertical: 14,
@@ -1453,6 +1545,46 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [opcion('Con ISV', true), opcion('Sin ISV', false)],
+      ),
+    );
+  }
+
+  Widget _selectorEstado() {
+    Widget opcion(String texto, bool valor) {
+      final activo = _soloActivos == valor;
+      return InkWell(
+        onTap: () => setState(() => _soloActivos = valor),
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          decoration: BoxDecoration(
+            color: activo ? const Color(0xFF0F1B3D) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            texto,
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: activo ? Colors.white : const Color(0xFF666A72),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFB6BCC7)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [opcion('Activos', true), opcion('Inactivos', false)],
       ),
     );
   }
