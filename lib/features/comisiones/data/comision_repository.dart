@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'comision_model.dart';
 import '../../ventas/data/item_venta_model.dart';
 import '../../reportes/data/reporte_repository.dart';
+import '../../../core/services/funciones_nube.dart';
 
 /// Tramos de comisión por venta de producto físico según volumen del
 /// periodo: a diferencia del sistema viejo (que los traía hardcodeados
@@ -79,7 +80,64 @@ class ComisionRepository {
   /// usuario que no es barbero vendió productos). Un usuario nunca tiene
   /// cortes propios, así que si el filtro es de tipo 'Usuario' la lista de
   /// cortes queda vacía en vez de mostrar la de todos los barberos.
+  LineaComisionVenta _lineaDesdeJson(Map<String, dynamic> j) => LineaComisionVenta(
+        idVenta: j['idVenta'] as String,
+        numeroDocumento: j['numeroDocumento'] as String,
+        fecha: fechaDesdeMillis(j['fecha']),
+        cliente: j['cliente'] as String,
+        nombreItem: j['nombreItem'] as String,
+        monto: numDesde(j['monto']),
+        comision: numDesde(j['comision']),
+      );
+
+  ComisionCorteBarbero _corteDesdeJson(Map<String, dynamic> j) => ComisionCorteBarbero(
+        idBarbero: j['idBarbero'] as String,
+        nombreBarbero: j['nombreBarbero'] as String,
+        cantidadCortes: numDesde(j['cantidadCortes']),
+        montoTotal: numDesde(j['montoTotal']),
+        comisionTotal: numDesde(j['comisionTotal']),
+        lineas: (j['lineas'] as List).map((l) => _lineaDesdeJson(l as Map<String, dynamic>)).toList(),
+      );
+
+  ComisionProductoVendedor _productoDesdeJson(Map<String, dynamic> j) => ComisionProductoVendedor(
+        tipo: j['tipo'] as String,
+        id: j['id'] as String,
+        nombre: j['nombre'] as String,
+        cantidadProductos: numDesde(j['cantidadProductos']),
+        montoTotal: numDesde(j['montoTotal']),
+        tasa: numDesde(j['tasa']),
+        comisionTotal: numDesde(j['comisionTotal']),
+        lineas: (j['lineas'] as List).map((l) => _lineaDesdeJson(l as Map<String, dynamic>)).toList(),
+      );
+
+  /// Resuelve cortes y productos del periodo con una sola llamada a la Cloud
+  /// Function `comisionesPeriodo` (ver functions/index.js): antes esto eran
+  /// 2 consultas a Firestore (ventas + collectionGroup 'detalle') y todo el
+  /// agrupamiento/tramos de comisión se hacía en el dispositivo; ahora las
+  /// 2 lecturas y el cálculo ocurren del lado del servidor. Si la función no
+  /// responde, cae al camino local de siempre.
   Future<({List<ComisionCorteBarbero> cortes, List<ComisionProductoVendedor> productos})> obtenerComisionesDelPeriodo(
+    DateTime inicio,
+    DateTime finInclusive, {
+    String? tipoFiltro,
+    String? idFiltro,
+  }) async {
+    try {
+      final resultado = await FuncionesNube.llamar('comisionesPeriodo', {
+        'inicioMillis': inicio.millisecondsSinceEpoch,
+        'finMillis': finInclusive.millisecondsSinceEpoch,
+        if (tipoFiltro != null) 'tipoFiltro': tipoFiltro,
+        if (idFiltro != null) 'idFiltro': idFiltro,
+      }) as Map<String, dynamic>;
+      final cortes = (resultado['cortes'] as List).map((c) => _corteDesdeJson(c as Map<String, dynamic>)).toList();
+      final productos = (resultado['productos'] as List).map((p) => _productoDesdeJson(p as Map<String, dynamic>)).toList();
+      return (cortes: cortes, productos: productos);
+    } catch (_) {
+      return _obtenerComisionesDelPeriodoLocal(inicio, finInclusive, tipoFiltro: tipoFiltro, idFiltro: idFiltro);
+    }
+  }
+
+  Future<({List<ComisionCorteBarbero> cortes, List<ComisionProductoVendedor> productos})> _obtenerComisionesDelPeriodoLocal(
     DateTime inicio,
     DateTime finInclusive, {
     String? tipoFiltro,

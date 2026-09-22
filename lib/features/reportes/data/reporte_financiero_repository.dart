@@ -13,6 +13,8 @@ import '../../compras_credito/data/abono_compra_model.dart';
 import '../../ventas_credito/data/venta_credito_repository.dart';
 import '../../ventas_credito/data/abono_model.dart';
 import '../../caja/data/cierre_caja_repository.dart';
+import '../../caja/data/cierre_caja_model.dart';
+import '../../../core/services/funciones_nube.dart';
 
 const _topN = 10;
 
@@ -179,7 +181,157 @@ class ReporteFinancieroRepository {
     );
   }
 
+  /// Trae el Reporte Financiero completo con una sola llamada a la Cloud
+  /// Function `reporteFinanciero` (ver functions/index.js): las ~11
+  /// consultas a Firestore (ventas, compras, detalle por collectionGroup,
+  /// egresos, abonos, productos, créditos, cierres de caja, serie mensual y
+  /// efectivo estimado) y todo el cálculo -que antes viajaban ida y vuelta
+  /// por la red del dispositivo, una por una- ocurren del lado del
+  /// servidor, en la misma red que Firestore. Solo viaja de vuelta el
+  /// resultado ya armado. Si la función no responde (sin internet, recién
+  /// desplegada, etc.) cae al camino local de siempre, sin que la pantalla
+  /// se quede sin poder generar el reporte.
   Future<ReporteFinancieroData> obtenerReporte(DateTime inicio, DateTime finInclusive) async {
+    try {
+      final resultado = await FuncionesNube.llamar(
+        'reporteFinanciero',
+        {
+          'inicioMillis': inicio.millisecondsSinceEpoch,
+          'finMillis': finInclusive.millisecondsSinceEpoch,
+          'ahoraMillis': DateTime.now().millisecondsSinceEpoch,
+        },
+        timeout: const Duration(seconds: 45),
+      ) as Map<String, dynamic>;
+      return _reporteDesdeJson(inicio, finInclusive, resultado);
+    } catch (_) {
+      return _obtenerReporteLocal(inicio, finInclusive);
+    }
+  }
+
+  List<RankingProducto> _rankingDesdeJson(List lista) => lista.map((r) {
+        final rr = r as Map<String, dynamic>;
+        return RankingProducto(
+          idProducto: rr['idProducto'] as String,
+          nombreProducto: rr['nombreProducto'] as String,
+          cantidad: numDesde(rr['cantidad']),
+          monto: numDesde(rr['monto']),
+        );
+      }).toList();
+
+  DetalleItemFinanciero _detalleItemDesdeJson(Map<String, dynamic> j) => DetalleItemFinanciero(
+        idVenta: j['idVenta'] as String,
+        numeroDocumento: j['numeroDocumento'] as String,
+        fecha: fechaDesdeMillis(j['fecha']),
+        cliente: j['cliente'] as String,
+        nombreItem: j['nombreItem'] as String,
+        esServicio: j['esServicio'] as bool,
+        venta: numDesde(j['venta']),
+        costo: numDesde(j['costo']),
+      );
+
+  CierreCajaModel _cierreCajaDesdeJson(Map<String, dynamic> j) => CierreCajaModel(
+        id: j['id'] as String,
+        fechaInicio: fechaDesdeMillis(j['fechaInicio']) ?? DateTime.now(),
+        fechaFin: fechaDesdeMillis(j['fechaFin']) ?? DateTime.now(),
+        montoInicial: numDesde(j['montoInicial']),
+        ingresosEfectivo: numDesde(j['ingresosEfectivo']),
+        ingresosTarjeta: numDesde(j['ingresosTarjeta']),
+        ingresosTransferencia: numDesde(j['ingresosTransferencia']),
+        egresosEfectivo: numDesde(j['egresosEfectivo']),
+        egresosTransferencia: numDesde(j['egresosTransferencia']),
+        totalCalculadoEfectivo: numDesde(j['totalCalculadoEfectivo']),
+        totalTransferencia: numDesde(j['totalTransferencia']),
+        granTotal: numDesde(j['granTotal']),
+        totalReal: numDesde(j['totalReal']),
+        diferencia: numDesde(j['diferencia']),
+        usuarioResponsable: j['usuarioResponsable'] as String? ?? '',
+        observaciones: j['observaciones'] as String? ?? '',
+        fechaRegistro: fechaDesdeMillis(j['fechaRegistro']),
+      );
+
+  ReporteFinancieroData _reporteDesdeJson(DateTime inicio, DateTime finInclusive, Map<String, dynamic> j) {
+    final flujo = j['flujoEfectivo'] as Map<String, dynamic>;
+    final resumen = j['resumenServiciosProductos'] as Map<String, dynamic>;
+    final balance = j['balanceGeneral'] as Map<String, dynamic>;
+
+    return ReporteFinancieroData(
+      inicio: inicio,
+      fin: finInclusive,
+      ventasPeriodo: numDesde(j['ventasPeriodo']),
+      comprasPeriodo: numDesde(j['comprasPeriodo']),
+      costoVentas: numDesde(j['costoVentas']),
+      utilidadBruta: numDesde(j['utilidadBruta']),
+      gastosPeriodo: numDesde(j['gastosPeriodo']),
+      utilidadNeta: numDesde(j['utilidadNeta']),
+      flujoEfectivo: FlujoEfectivo(
+        ingresosEfectivo: numDesde(flujo['ingresosEfectivo']),
+        ingresosTarjeta: numDesde(flujo['ingresosTarjeta']),
+        ingresosTransferencia: numDesde(flujo['ingresosTransferencia']),
+        egresosEfectivo: numDesde(flujo['egresosEfectivo']),
+        egresosTransferencia: numDesde(flujo['egresosTransferencia']),
+      ),
+      serieMensual: (j['serieMensual'] as List).map((m) {
+        final mm = m as Map<String, dynamic>;
+        return PuntoMensual(
+          mes: fechaDesdeMillis(mm['mesMillis']) ?? DateTime.now(),
+          totalVentas: numDesde(mm['totalVentas']),
+          totalCompras: numDesde(mm['totalCompras']),
+        );
+      }).toList(),
+      gananciaPorVenta: (j['gananciaPorVenta'] as List).map((v) {
+        final vv = v as Map<String, dynamic>;
+        return GananciaPorVenta(
+          idVenta: vv['idVenta'] as String,
+          numeroDocumento: vv['numeroDocumento'] as String,
+          fecha: fechaDesdeMillis(vv['fecha']),
+          cliente: vv['cliente'] as String,
+          ventas: numDesde(vv['ventas']),
+          costo: numDesde(vv['costo']),
+        );
+      }).toList(),
+      topVendidosPorCantidad: _rankingDesdeJson(j['topVendidosPorCantidad'] as List),
+      topCompradosPorCantidad: _rankingDesdeJson(j['topCompradosPorCantidad'] as List),
+      topGananciaPorProducto: _rankingDesdeJson(j['topGananciaPorProducto'] as List),
+      productosSinVenta: (j['productosSinVenta'] as List).map((p) {
+        final pp = p as Map<String, dynamic>;
+        return ProductoSinVenta(
+          idProducto: pp['idProducto'] as String,
+          nombreProducto: pp['nombreProducto'] as String,
+          stock: numDesde(pp['stock']),
+          valorInventario: numDesde(pp['valorInventario']),
+        );
+      }).toList(),
+      ventasPorUsuario: (j['ventasPorUsuario'] as List).map((u) {
+        final uu = u as Map<String, dynamic>;
+        return VentasPorUsuario(
+          usuario: uu['usuario'] as String,
+          totalVentas: numDesde(uu['totalVentas']),
+          cantidadTransacciones: (uu['cantidadTransacciones'] as num).toInt(),
+        );
+      }).toList(),
+      resumenServiciosProductos: ResumenServiciosProductos(
+        ventasServicios: numDesde(resumen['ventasServicios']),
+        costoServicios: numDesde(resumen['costoServicios']),
+        ventasProductos: numDesde(resumen['ventasProductos']),
+        costoProductos: numDesde(resumen['costoProductos']),
+        detalle: (resumen['detalle'] as List).map((d) => _detalleItemDesdeJson(d as Map<String, dynamic>)).toList(),
+      ),
+      totalAbonosComprasCredito: numDesde(j['totalAbonosComprasCredito']),
+      abonosPorProveedor: (j['abonosPorProveedor'] as List).map((a) {
+        final aa = a as Map<String, dynamic>;
+        return AbonoPorProveedor(proveedor: aa['proveedor'] as String, total: numDesde(aa['total']));
+      }).toList(),
+      balanceGeneral: BalanceGeneral(
+        inventarioACosto: numDesde(balance['inventarioACosto']),
+        cuentasPorCobrar: numDesde(balance['cuentasPorCobrar']),
+        efectivoEstimado: numDesde(balance['efectivoEstimado']),
+        cuentasPorPagar: numDesde(balance['cuentasPorPagar']),
+      ),
+      cierresCaja: (j['cierresCaja'] as List).map((c) => _cierreCajaDesdeJson(c as Map<String, dynamic>)).toList(),
+    );
+  }
+
+  Future<ReporteFinancieroData> _obtenerReporteLocal(DateTime inicio, DateTime finInclusive) async {
     // Todo lo que no depende de nada más se dispara en paralelo de una vez;
     // recién se espera por cada resultado donde hace falta.
     final ventasHeadersFuture = _reporteRepository.obtenerReporteVentas(inicio, finInclusive);

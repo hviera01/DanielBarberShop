@@ -4,6 +4,7 @@ import 'venta_en_espera_model.dart';
 import 'item_venta_model.dart';
 import 'pago_detalle_model.dart';
 import '../../../core/utils/formato_moneda.dart';
+import '../../../core/services/funciones_nube.dart';
 import '../../productos/data/lote_costo_repository.dart';
 
 class VentaRepository {
@@ -323,7 +324,38 @@ class VentaRepository {
     });
   }
 
+  /// Arma un [VentaModel] a partir del JSON "crudo" que devuelven las Cloud
+  /// Functions ventaPorId/ventasPorNumero (ver functions/index.js,
+  /// serializarVentaCruda): mismo shape que un documento de Firestore leído
+  /// directo (mismos nombres de campo, Timestamp reconstruidos por
+  /// [revivirTimestamps]), así que se puede pasar tal cual al mismo
+  /// `VentaModel.fromMap` que ya usa el resto del repositorio.
+  VentaModel _ventaDesdeJsonCrudo(Map<String, dynamic> json) {
+    final revivido = revivirTimestamps(json) as Map<String, dynamic>;
+    final detalle = (revivido['detalle'] as List).cast<Map<String, dynamic>>();
+    final items = detalle.map((d) => ItemVentaModel.fromMap(d)).toList();
+    return VentaModel.fromMap(revivido['id'] as String, revivido, items);
+  }
+
+  /// Trae una venta con su detalle en una sola llamada a la Cloud Function
+  /// `ventaPorId` (ver functions/index.js): antes eran 2 consultas directas
+  /// a Firestore desde el dispositivo, cada una pagando el viaje completo de
+  /// ida y vuelta por la red del cajero; ahora es 1 sola llamada y esas 2
+  /// lecturas ocurren del lado del servidor, en la misma red de Google. Si
+  /// la función no responde (sin internet, la primera vez que se despliega,
+  /// etc.) cae al camino directo de siempre, para que la pantalla de
+  /// Detalle de Venta nunca quede sin poder buscar.
   Future<VentaModel?> obtenerVentaPorId(String id) async {
+    try {
+      final resultado = await FuncionesNube.llamar('ventaPorId', {'id': id});
+      final venta = (resultado as Map<String, dynamic>)['venta'];
+      return venta == null ? null : _ventaDesdeJsonCrudo(venta as Map<String, dynamic>);
+    } catch (_) {
+      return _obtenerVentaPorIdLocal(id);
+    }
+  }
+
+  Future<VentaModel?> _obtenerVentaPorIdLocal(String id) async {
     // Las dos lecturas no dependen una de la otra (el id ya se conoce de
     // entrada), así que se disparan juntas en vez de esperar el documento
     // antes de recién ahí pedir el detalle: ahorra una vuelta completa a
@@ -367,7 +399,25 @@ class VentaRepository {
   /// bien podría coincidir con una Factura Y una Cotización a la vez. Cada
   /// candidato se busca con una consulta de igualdad simple (no `whereIn`)
   /// para no depender de un índice compuesto.
+  /// Igual idea que [obtenerVentaPorId]: la Cloud Function `ventasPorNumero`
+  /// arma del lado del servidor las variantes con ceros de relleno, busca
+  /// cada una y trae el detalle de cada coincidencia -antes eran hasta 5
+  /// consultas más una por cada resultado encontrado, todas desde el
+  /// dispositivo-. Si falla, cae al camino directo de siempre.
   Future<List<VentaModel>> buscarVentasPorNumeroDocumento(String texto, {String? tipoDocumento}) async {
+    try {
+      final resultado = await FuncionesNube.llamar('ventasPorNumero', {
+        'texto': texto,
+        if (tipoDocumento != null && tipoDocumento.isNotEmpty) 'tipoDocumento': tipoDocumento,
+      });
+      final ventas = (resultado as Map<String, dynamic>)['ventas'] as List;
+      return ventas.map((v) => _ventaDesdeJsonCrudo(v as Map<String, dynamic>)).toList();
+    } catch (_) {
+      return _buscarVentasPorNumeroDocumentoLocal(texto, tipoDocumento: tipoDocumento);
+    }
+  }
+
+  Future<List<VentaModel>> _buscarVentasPorNumeroDocumentoLocal(String texto, {String? tipoDocumento}) async {
     final limpio = texto.trim();
     if (limpio.isEmpty) return [];
 

@@ -4,6 +4,7 @@ import 'egreso_model.dart';
 import '../../reportes/data/reporte_repository.dart';
 import '../../ventas_credito/data/venta_credito_repository.dart';
 import '../../compras_credito/data/compra_credito_repository.dart';
+import '../../../core/services/funciones_nube.dart';
 
 class EgresoRepository {
   final _col = FirebaseFirestore.instance.collection('egresos');
@@ -42,7 +43,39 @@ class EgresoRepository {
     });
   }
 
+  MovimientoFinanciero _movimientoDesdeJson(Map<String, dynamic> j) => MovimientoFinanciero(
+        fecha: fechaDesdeMillis(j['fecha']) ?? DateTime.now(),
+        tipoMovimiento: j['tipoMovimiento'] as String? ?? '',
+        descripcion: j['descripcion'] as String? ?? '',
+        ingreso: numDesde(j['ingreso']),
+        egreso: numDesde(j['egreso']),
+        metodoPago: j['metodoPago'] as String? ?? '',
+        categoria: j['categoria'] as String? ?? '',
+        esPagado: j['esPagado'] as bool? ?? true,
+        fechaPago: fechaDesdeMillis(j['fechaPago']),
+        usuario: j['usuario'] as String? ?? '',
+        idEgreso: j['idEgreso'] as String? ?? '',
+      );
+
+  /// Arma el libro financiero completo con una sola llamada a la Cloud
+  /// Function `libroFinanciero` (ver functions/index.js): antes eran 5
+  /// consultas a Firestore desde el dispositivo (ventas, compras, abonos de
+  /// venta y de compra, egresos) que después se combinaban acá; ahora esas 5
+  /// lecturas y el armado de la lista ocurren del lado del servidor. Si la
+  /// función no responde, cae al camino local de siempre.
   Future<List<MovimientoFinanciero>> obtenerLibroFinanciero(DateTime inicio, DateTime finInclusive) async {
+    try {
+      final resultado = await FuncionesNube.llamar('libroFinanciero', {
+        'inicioMillis': inicio.millisecondsSinceEpoch,
+        'finMillis': finInclusive.millisecondsSinceEpoch,
+      }) as List;
+      return resultado.map((m) => _movimientoDesdeJson(m as Map<String, dynamic>)).toList();
+    } catch (_) {
+      return _obtenerLibroFinancieroLocal(inicio, finInclusive);
+    }
+  }
+
+  Future<List<MovimientoFinanciero>> _obtenerLibroFinancieroLocal(DateTime inicio, DateTime finInclusive) async {
     final resultados = await Future.wait([
       _tolerante('ventas', _reporteRepository.obtenerReporteVentas(inicio, finInclusive)),
       _tolerante('compras', _reporteRepository.obtenerReporteCompras(inicio, finInclusive)),

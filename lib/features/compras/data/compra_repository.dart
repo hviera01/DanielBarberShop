@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'compra_model.dart';
 import 'item_compra_model.dart';
 import '../../../core/utils/formato_moneda.dart';
+import '../../../core/services/funciones_nube.dart';
 import '../../productos/data/lote_costo_repository.dart';
 
 class CompraRepository {
@@ -186,7 +187,31 @@ class CompraRepository {
     );
   }
 
+  /// Arma un [CompraModel] a partir del JSON "crudo" que devuelven las
+  /// Cloud Functions compraPorId/compraPorNumero (ver functions/index.js):
+  /// mismo shape que un documento de Firestore leído directo, así que se
+  /// pasa tal cual al mismo `CompraModel.fromMap` de siempre.
+  CompraModel _compraDesdeJsonCrudo(Map<String, dynamic> json) {
+    final revivido = revivirTimestamps(json) as Map<String, dynamic>;
+    final detalle = (revivido['detalle'] as List).cast<Map<String, dynamic>>();
+    final items = detalle.map((d) => ItemCompraModel.fromMap(d)).toList();
+    return CompraModel.fromMap(revivido['id'] as String, revivido, items);
+  }
+
+  /// Trae una compra con su detalle en una sola llamada a la Cloud Function
+  /// `compraPorId` (ver [VentaRepository.obtenerVentaPorId], mismo criterio).
+  /// Si la función no responde, cae al camino directo de siempre.
   Future<CompraModel?> obtenerCompraPorId(String id) async {
+    try {
+      final resultado = await FuncionesNube.llamar('compraPorId', {'id': id});
+      final compra = (resultado as Map<String, dynamic>)['compra'];
+      return compra == null ? null : _compraDesdeJsonCrudo(compra as Map<String, dynamic>);
+    } catch (_) {
+      return _obtenerCompraPorIdLocal(id);
+    }
+  }
+
+  Future<CompraModel?> _obtenerCompraPorIdLocal(String id) async {
     final snap = await _colCompras.doc(id).get();
     if (!snap.exists) return null;
     final detalleSnap = await _colCompras.doc(id).collection('detalle').get();
@@ -198,8 +223,19 @@ class CompraRepository {
   /// se escriba sin los ceros a la izquierda) y, si no encuentra nada, prueba
   /// por número de factura del proveedor -para que el usuario pueda usar
   /// cualquiera de los dos sin tener que elegir de antemano cuál está
-  /// escribiendo-.
+  /// escribiendo-. Se resuelve del lado del servidor con la Cloud Function
+  /// `compraPorNumero`; si no responde, cae al camino directo de siempre.
   Future<CompraModel?> obtenerCompraPorNumeroDocumento(String numeroDocumento) async {
+    try {
+      final resultado = await FuncionesNube.llamar('compraPorNumero', {'texto': numeroDocumento});
+      final compra = (resultado as Map<String, dynamic>)['compra'];
+      return compra == null ? null : _compraDesdeJsonCrudo(compra as Map<String, dynamic>);
+    } catch (_) {
+      return _obtenerCompraPorNumeroDocumentoLocal(numeroDocumento);
+    }
+  }
+
+  Future<CompraModel?> _obtenerCompraPorNumeroDocumentoLocal(String numeroDocumento) async {
     final texto = numeroDocumento.trim();
     if (texto.isEmpty) return null;
 

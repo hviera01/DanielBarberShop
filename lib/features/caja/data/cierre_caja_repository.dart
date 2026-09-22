@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'cierre_caja_model.dart';
 import '../../egresos/data/egreso_repository.dart';
+import '../../../core/services/funciones_nube.dart';
 
 class EstadoCaja {
   final DateTime fechaDesde;
@@ -37,7 +38,32 @@ class CierreCajaRepository {
     }, SetOptions(merge: true));
   }
 
+  /// Suma los totales por método de pago con una sola llamada a la Cloud
+  /// Function `cierreCajaTotales` (ver functions/index.js): las 5 lecturas
+  /// que arman el libro financiero y la suma final ocurren del lado del
+  /// servidor, y solo viaja de vuelta el resultado ya sumado (5 números),
+  /// no la lista completa de movimientos. Si la función no responde, cae al
+  /// camino local de siempre (que ya tiene su propio respaldo en
+  /// [EgresoRepository.obtenerLibroFinanciero]).
   Future<TotalesCaja> calcularTotales(DateTime inicio, DateTime finInclusive) async {
+    try {
+      final resultado = await FuncionesNube.llamar('cierreCajaTotales', {
+        'inicioMillis': inicio.millisecondsSinceEpoch,
+        'finMillis': finInclusive.millisecondsSinceEpoch,
+      }) as Map<String, dynamic>;
+      return TotalesCaja(
+        ingresosEfectivo: numDesde(resultado['ingresosEfectivo']),
+        ingresosTarjeta: numDesde(resultado['ingresosTarjeta']),
+        ingresosTransferencia: numDesde(resultado['ingresosTransferencia']),
+        egresosEfectivo: numDesde(resultado['egresosEfectivo']),
+        egresosTransferencia: numDesde(resultado['egresosTransferencia']),
+      );
+    } catch (_) {
+      return _calcularTotalesLocal(inicio, finInclusive);
+    }
+  }
+
+  Future<TotalesCaja> _calcularTotalesLocal(DateTime inicio, DateTime finInclusive) async {
     final movimientos = await _egresoRepository.obtenerLibroFinanciero(inicio, finInclusive);
 
     double ingresosEfectivo = 0, ingresosTarjeta = 0, ingresosTransferencia = 0;
