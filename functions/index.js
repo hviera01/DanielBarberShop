@@ -424,3 +424,56 @@ exports.compraPorNumero = conManejoDeErrores('compraPorNumero', async (data) => 
   if (!doc) return { compra: null };
   return { compra: await obtenerCompraConDetalle(doc) };
 });
+
+// ---------- Total del Reporte de Ventas / Compras (sin filtros) ----------
+//
+// Reporte de Ventas/Compras (a diferencia del resto de las funciones de
+// arriba) no trae la lista completa por acá: eso lo sigue haciendo el
+// cliente, pero paginado (ver ReporteRepository.obtenerPaginaVentas), para
+// que la pantalla pinte algo casi al instante sin importar cuántos meses
+// abarque el rango. Lo único que SÍ conviene resolver del lado del servidor
+// es el total del período: sumarlo requeriría traer todos los documentos, lo
+// mismo que la paginación busca evitar. Con `aggregate(sum())` Firestore da
+// el total sin bajar los documentos, usando el mismo índice compuesto que ya
+// existe para la serie mensual del Reporte Financiero.
+
+exports.totalReporteVentas = conManejoDeErrores('totalReporteVentas', async (data) => {
+  const inicioMillis = requerirNumero(data, 'inicioMillis');
+  const finMillis = requerirNumero(data, 'finMillis');
+  try {
+    const resultado = await db
+      .collection('ventas')
+      .where('estado', '==', 'Activa')
+      .where('tipoDocumento', 'in', ['Factura', 'Boleta', 'Venta'])
+      .where('fechaRegistro', '>=', ts(inicioMillis))
+      .where('fechaRegistro', '<=', ts(finMillis))
+      .aggregate({ total: AggregateField.sum('totalAPagar'), cantidad: AggregateField.count() })
+      .get();
+    const datos = resultado.data();
+    return { total: c.num(datos.total), cantidad: datos.cantidad };
+  } catch (error) {
+    console.warn('totalReporteVentas: agregación falló, se recalcula sumando documentos:', error.message);
+    const ventas = (await leerVentasRango(inicioMillis, finMillis)).filter(c.ventaEsValida);
+    return { total: c.sumar(ventas, (v) => v.totalAPagar), cantidad: ventas.length };
+  }
+});
+
+exports.totalReporteCompras = conManejoDeErrores('totalReporteCompras', async (data) => {
+  const inicioMillis = requerirNumero(data, 'inicioMillis');
+  const finMillis = requerirNumero(data, 'finMillis');
+  try {
+    const resultado = await db
+      .collection('compras')
+      .where('estado', '==', 'Activa')
+      .where('fechaRegistro', '>=', ts(inicioMillis))
+      .where('fechaRegistro', '<=', ts(finMillis))
+      .aggregate({ total: AggregateField.sum('totalAPagar'), cantidad: AggregateField.count() })
+      .get();
+    const datos = resultado.data();
+    return { total: c.num(datos.total), cantidad: datos.cantidad };
+  } catch (error) {
+    console.warn('totalReporteCompras: agregación falló, se recalcula sumando documentos:', error.message);
+    const compras = (await leerComprasRango(inicioMillis, finMillis)).filter((x) => x.estado === 'Activa');
+    return { total: c.sumar(compras, (x) => x.montoTotal), cantidad: compras.length };
+  }
+});

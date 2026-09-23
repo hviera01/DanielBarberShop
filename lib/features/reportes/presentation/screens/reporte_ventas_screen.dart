@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -32,7 +34,26 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
   String? _usuarioFiltro;
   bool _cargando = false;
   String? _error;
-  List<ReporteVentaModel>? _ventas;
+  List<ReporteVentaModel> _ventas = [];
+
+  // Paginación: la primera tanda (ver _tamanoPaginaReporte en
+  // ReporteRepository) pinta casi al instante sin importar cuántos meses
+  // abarque el rango; el resto se sigue trayendo solo, de a tandas, en
+  // segundo plano (_seguirCargandoEnFondo) sin tapar la pantalla. El total
+  // de arriba se pide aparte, con una agregación de Firestore que no
+  // necesita bajar los documentos (_totalAgregado), y se usa mientras no
+  // haya ningún filtro activo -si hay un filtro, el total se sigue
+  // calculando con lo que ya se cargó, igual que antes, y se corrige solo a
+  // medida que llegan más tandas-.
+  DocumentSnapshot<Map<String, dynamic>>? _cursor;
+  bool _hayMasPorCargar = false;
+  bool _cargandoMasEnFondo = false;
+  double? _totalAgregado;
+  // Se incrementa en cada _buscar(): si el usuario cambia de rango o toca
+  // "Limpiar" mientras una carga de fondo de la búsqueda anterior sigue en
+  // camino, esa carga vieja se detiene sola en la próxima vuelta del bucle
+  // en vez de seguir agregando resultados que ya no corresponden.
+  int _generacionBusqueda = 0;
 
   // Cachea el resultado de _listaFiltrada: ese getter se llama varias veces
   // por build (para el badge de total, para la lista y para exportar), y
@@ -79,19 +100,73 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
     // botón grande, y ver la lista completa sin filtrar como si la búsqueda
     // no hiciera nada.
     _aplicarBusqueda();
+    final miGeneracion = ++_generacionBusqueda;
     setState(() {
       _cargando = true;
       _error = null;
+      _ventas = [];
+      _cursor = null;
+      _hayMasPorCargar = false;
+      _totalAgregado = null;
     });
+    final finInclusive = DateTime(_fechaFin.year, _fechaFin.month, _fechaFin.day, 23, 59, 59);
+    final repo = ref.read(reporteRepositoryProvider);
     try {
-      final finInclusive = DateTime(_fechaFin.year, _fechaFin.month, _fechaFin.day, 23, 59, 59);
-      final ventas = await ref.read(reporteRepositoryProvider).obtenerReporteVentas(_fechaInicio, finInclusive);
-      if (mounted) setState(() => _ventas = ventas);
+      final primeraPagina = await repo.obtenerPaginaVentas(_fechaInicio, finInclusive);
+      if (!mounted || miGeneracion != _generacionBusqueda) return;
+      setState(() {
+        _ventas = primeraPagina.ventas;
+        _cursor = primeraPagina.cursor;
+        _hayMasPorCargar = primeraPagina.hayMas;
+        _cargando = false;
+      });
+      // El total real del rango (sin filtros) y el resto de las tandas se
+      // piden en paralelo, sin bloquear lo que ya se pintó.
+      unawaited(_cargarTotalAgregado(_fechaInicio, finInclusive, miGeneracion));
+      unawaited(_seguirCargandoEnFondo(finInclusive, miGeneracion));
     } catch (e) {
-      if (mounted) setState(() => _error = 'No se pudo cargar el reporte');
-    } finally {
-      if (mounted) setState(() => _cargando = false);
+      if (!mounted || miGeneracion != _generacionBusqueda) return;
+      setState(() {
+        _error = 'No se pudo cargar el reporte';
+        _cargando = false;
+      });
     }
+  }
+
+  Future<void> _cargarTotalAgregado(DateTime inicio, DateTime finInclusive, int generacion) async {
+    try {
+      final resultado = await ref.read(reporteRepositoryProvider).obtenerTotalVentas(inicio, finInclusive);
+      if (!mounted || generacion != _generacionBusqueda) return;
+      setState(() => _totalAgregado = resultado.total);
+    } catch (_) {
+      // Sin drama: el total de arriba se sigue mostrando con lo que ya se
+      // haya cargado hasta ahora (ver el cálculo de totalFacturado en build).
+    }
+  }
+
+  /// Trae el resto del rango de a tandas, sin bloquear la pantalla ni tapar
+  /// nada: la lista se va completando sola mientras el usuario ya puede ver
+  /// y tocar lo que llegó en la primera tanda.
+  Future<void> _seguirCargandoEnFondo(DateTime finInclusive, int generacion) async {
+    final repo = ref.read(reporteRepositoryProvider);
+    while (mounted && generacion == _generacionBusqueda && _hayMasPorCargar) {
+      setState(() => _cargandoMasEnFondo = true);
+      try {
+        final pagina = await repo.obtenerPaginaVentas(_fechaInicio, finInclusive, despuesDe: _cursor);
+        if (!mounted || generacion != _generacionBusqueda) return;
+        setState(() {
+          _ventas = [..._ventas, ...pagina.ventas];
+          _cursor = pagina.cursor;
+          _hayMasPorCargar = pagina.hayMas;
+        });
+      } catch (_) {
+        // Si falla a mitad de camino (se cortó el internet, etc.) se queda
+        // con lo que alcanzó a traer; el usuario puede tocar "Buscar" de
+        // nuevo para reintentar desde cero.
+        break;
+      }
+    }
+    if (mounted && generacion == _generacionBusqueda) setState(() => _cargandoMasEnFondo = false);
   }
 
   void _verDetalle(String idVenta) {
@@ -138,7 +213,7 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
   }
 
   List<ReporteVentaModel> get _listaFiltrada {
-    final ventas = _ventas ?? [];
+    final ventas = _ventas;
     if (identical(ventas, _ventasCacheadas) &&
         _busquedaCacheada == _busqueda &&
         _metodoPagoCacheado == _metodoPagoFiltro &&
@@ -202,7 +277,20 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
   @override
   Widget build(BuildContext context) {
     final lista = _listaFiltrada;
-    final totalFacturado = lista.where((v) => v.esActiva && !v.esCotizacion).fold<double>(0, (s, v) => s + v.totalAPagar);
+    final sinFiltros = _busqueda.isEmpty &&
+        _metodoPagoFiltro == null &&
+        _condicionFiltro == null &&
+        _estadoFiltro == null &&
+        _tipoDocumentoFiltro == null &&
+        _usuarioFiltro == null;
+    // Sin filtros: el total real del rango completo, aunque todavía no haya
+    // terminado de cargar toda la lista (viene de una agregación de
+    // Firestore aparte, ver _cargarTotalAgregado). Con algún filtro activo:
+    // el total se calcula con lo que ya se cargó -como siempre-, y se va
+    // corrigiendo solo a medida que llegan más tandas en segundo plano.
+    final totalFacturado = sinFiltros && _totalAgregado != null
+        ? _totalAgregado!
+        : lista.where((v) => v.esActiva && !v.esCotizacion).fold<double>(0, (s, v) => s + v.totalAPagar);
 
     return Container(
       color: const Color(0xFFF2F3F7),
@@ -253,13 +341,16 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
                         style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFB6BCC7)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                       ),
                       OutlinedButton.icon(
-                        onPressed: _exportarExcel,
+                        // Deshabilitado mientras falten tandas por cargar en
+                        // segundo plano: así nunca se exporta un reporte a
+                        // medias sin que el usuario se dé cuenta.
+                        onPressed: (_cargando || _hayMasPorCargar) ? null : _exportarExcel,
                         icon: const Icon(Icons.grid_on_outlined, size: 18),
                         label: Text('Descargar Excel', style: GoogleFonts.poppins(fontSize: 13)),
                         style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFB6BCC7)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                       ),
                       OutlinedButton.icon(
-                        onPressed: _exportarPdf,
+                        onPressed: (_cargando || _hayMasPorCargar) ? null : _exportarPdf,
                         icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
                         label: Text('Descargar PDF', style: GoogleFonts.poppins(fontSize: 13)),
                         style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFB6BCC7)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
@@ -324,7 +415,15 @@ class _ReporteVentasScreenState extends ConsumerState<ReporteVentasScreen> {
                                   ],
                                 ),
                               )
-                            : (esMovil ? _tarjetas(lista) : _tabla(lista)),
+                            : Column(
+                                children: [
+                                  // Discreta, no tapa nada: avisa que todavía
+                                  // se está trayendo el resto del rango en
+                                  // segundo plano (ver _seguirCargandoEnFondo).
+                                  if (_cargandoMasEnFondo) const LinearProgressIndicator(minHeight: 2, color: Color(0xFF0F1B3D)),
+                                  Expanded(child: esMovil ? _tarjetas(lista) : _tabla(lista)),
+                                ],
+                              ),
               ),
             ),
           );

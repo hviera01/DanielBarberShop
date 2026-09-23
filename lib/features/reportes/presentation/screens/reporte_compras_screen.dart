@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -32,7 +34,19 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
   String? _usuarioFiltro;
   bool _cargando = false;
   String? _error;
-  List<ReporteCompraModel>? _compras;
+  List<ReporteCompraModel> _compras = [];
+
+  // Mismo esquema de paginación + carga en segundo plano que
+  // ReporteVentasScreen (ver los comentarios ahí): la primera tanda pinta
+  // casi al instante -acá importa todavía más, porque este reporte arranca
+  // con un rango de 12 meses por defecto- y el resto se completa solo. El
+  // total de arriba usa una agregación de Firestore mientras no haya
+  // filtros activos (incluido el proveedor).
+  DocumentSnapshot<Map<String, dynamic>>? _cursor;
+  bool _hayMasPorCargar = false;
+  bool _cargandoMasEnFondo = false;
+  double? _totalAgregado;
+  int _generacionBusqueda = 0;
 
   // Cachea el resultado de _listaFiltrada: ese getter se llama varias veces
   // por build (para el badge de total, para la lista y para exportar), y
@@ -43,6 +57,7 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
   String? _metodoPagoCacheado;
   String? _condicionCacheada;
   String? _usuarioCacheado;
+  String? _idProveedorCacheado;
   List<ReporteCompraModel> _listaCacheada = [];
 
   static const _metodosPago = ['Efectivo', 'Transferencia', 'Tarjeta', 'Cheque'];
@@ -72,19 +87,64 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
     // grande de "Buscar" también tiene que aplicar el texto libre, no solo
     // la flechita chiquita del cuadro de búsqueda.
     _aplicarBusqueda();
+    final miGeneracion = ++_generacionBusqueda;
     setState(() {
       _cargando = true;
       _error = null;
+      _compras = [];
+      _cursor = null;
+      _hayMasPorCargar = false;
+      _totalAgregado = null;
     });
+    final finInclusive = DateTime(_fechaFin.year, _fechaFin.month, _fechaFin.day, 23, 59, 59);
+    final repo = ref.read(reporteRepositoryProvider);
     try {
-      final finInclusive = DateTime(_fechaFin.year, _fechaFin.month, _fechaFin.day, 23, 59, 59);
-      final compras = await ref.read(reporteRepositoryProvider).obtenerReporteCompras(_fechaInicio, finInclusive, idProveedor: _idProveedorFiltro);
-      if (mounted) setState(() => _compras = compras);
+      final primeraPagina = await repo.obtenerPaginaCompras(_fechaInicio, finInclusive);
+      if (!mounted || miGeneracion != _generacionBusqueda) return;
+      setState(() {
+        _compras = primeraPagina.compras;
+        _cursor = primeraPagina.cursor;
+        _hayMasPorCargar = primeraPagina.hayMas;
+        _cargando = false;
+      });
+      unawaited(_cargarTotalAgregado(_fechaInicio, finInclusive, miGeneracion));
+      unawaited(_seguirCargandoEnFondo(finInclusive, miGeneracion));
     } catch (e) {
-      if (mounted) setState(() => _error = 'No se pudo cargar el reporte');
-    } finally {
-      if (mounted) setState(() => _cargando = false);
+      if (!mounted || miGeneracion != _generacionBusqueda) return;
+      setState(() {
+        _error = 'No se pudo cargar el reporte';
+        _cargando = false;
+      });
     }
+  }
+
+  Future<void> _cargarTotalAgregado(DateTime inicio, DateTime finInclusive, int generacion) async {
+    try {
+      final resultado = await ref.read(reporteRepositoryProvider).obtenerTotalCompras(inicio, finInclusive);
+      if (!mounted || generacion != _generacionBusqueda) return;
+      setState(() => _totalAgregado = resultado.total);
+    } catch (_) {
+      // El total de arriba se sigue mostrando con lo que ya se haya cargado.
+    }
+  }
+
+  Future<void> _seguirCargandoEnFondo(DateTime finInclusive, int generacion) async {
+    final repo = ref.read(reporteRepositoryProvider);
+    while (mounted && generacion == _generacionBusqueda && _hayMasPorCargar) {
+      setState(() => _cargandoMasEnFondo = true);
+      try {
+        final pagina = await repo.obtenerPaginaCompras(_fechaInicio, finInclusive, despuesDe: _cursor);
+        if (!mounted || generacion != _generacionBusqueda) return;
+        setState(() {
+          _compras = [..._compras, ...pagina.compras];
+          _cursor = pagina.cursor;
+          _hayMasPorCargar = pagina.hayMas;
+        });
+      } catch (_) {
+        break;
+      }
+    }
+    if (mounted && generacion == _generacionBusqueda) setState(() => _cargandoMasEnFondo = false);
   }
 
   void _aplicarBusqueda() {
@@ -124,15 +184,22 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
   }
 
   List<ReporteCompraModel> get _listaFiltrada {
-    final compras = _compras ?? [];
+    final compras = _compras;
     if (identical(compras, _comprasCacheadas) &&
         _busquedaCacheada == _busqueda &&
         _metodoPagoCacheado == _metodoPagoFiltro &&
         _condicionCacheada == _condicionFiltro &&
-        _usuarioCacheado == _usuarioFiltro) {
+        _usuarioCacheado == _usuarioFiltro &&
+        _idProveedorCacheado == _idProveedorFiltro) {
       return _listaCacheada;
     }
     var lista = compras;
+    // El filtro de proveedor -igual que antes de la paginación- se aplica
+    // acá en memoria, no en la consulta: la tanda de la página no lo conoce
+    // (ver ReporteRepository.obtenerPaginaCompras).
+    if (_idProveedorFiltro != null && _idProveedorFiltro!.isNotEmpty) {
+      lista = lista.where((c) => c.idProveedor == _idProveedorFiltro).toList();
+    }
     if (_busqueda.isNotEmpty) {
       lista = lista.where((c) => coincideFuzzy(c.textoBusqueda, _busqueda)).toList();
     }
@@ -150,6 +217,7 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
     _metodoPagoCacheado = _metodoPagoFiltro;
     _condicionCacheada = _condicionFiltro;
     _usuarioCacheado = _usuarioFiltro;
+    _idProveedorCacheado = _idProveedorFiltro;
     _listaCacheada = lista;
     return lista;
   }
@@ -184,7 +252,12 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
   @override
   Widget build(BuildContext context) {
     final lista = _listaFiltrada;
-    final totalFacturado = lista.fold<double>(0, (s, c) => s + c.montoTotal);
+    final sinFiltros = _busqueda.isEmpty &&
+        _metodoPagoFiltro == null &&
+        _condicionFiltro == null &&
+        _usuarioFiltro == null &&
+        (_idProveedorFiltro == null || _idProveedorFiltro!.isEmpty);
+    final totalFacturado = sinFiltros && _totalAgregado != null ? _totalAgregado! : lista.fold<double>(0, (s, c) => s + c.montoTotal);
     final proveedoresAsync = ref.watch(proveedoresStreamProvider);
 
     return Container(
@@ -238,13 +311,13 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
                         style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFB6BCC7)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                       ),
                       OutlinedButton.icon(
-                        onPressed: _exportarExcel,
+                        onPressed: (_cargando || _hayMasPorCargar) ? null : _exportarExcel,
                         icon: const Icon(Icons.grid_on_outlined, size: 18),
                         label: Text('Descargar Excel', style: GoogleFonts.poppins(fontSize: 13)),
                         style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFB6BCC7)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                       ),
                       OutlinedButton.icon(
-                        onPressed: _exportarPdf,
+                        onPressed: (_cargando || _hayMasPorCargar) ? null : _exportarPdf,
                         icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
                         label: Text('Descargar PDF', style: GoogleFonts.poppins(fontSize: 13)),
                         style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1A1A1A), side: const BorderSide(color: Color(0xFFB6BCC7)), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
@@ -301,7 +374,12 @@ class _ReporteComprasScreenState extends ConsumerState<ReporteComprasScreen> {
                                   ],
                                 ),
                               )
-                            : (esMovil ? _tarjetas(lista) : _tabla(lista)),
+                            : Column(
+                                children: [
+                                  if (_cargandoMasEnFondo) const LinearProgressIndicator(minHeight: 2, color: Color(0xFF0F1B3D)),
+                                  Expanded(child: esMovil ? _tarjetas(lista) : _tabla(lista)),
+                                ],
+                              ),
               ),
             ),
           );
