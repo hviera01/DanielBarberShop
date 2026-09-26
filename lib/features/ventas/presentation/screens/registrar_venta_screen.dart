@@ -32,6 +32,7 @@ import '../../../../core/constants/roles.dart';
 import '../../../../core/services/impresora_red_service.dart';
 import '../../../../core/utils/codigo_barras_utils.dart';
 import '../../../../core/utils/formato_moneda.dart';
+import '../../../../core/utils/mensaje_error_guardado.dart';
 import '../../../../core/widgets/barcode_scanner_screen.dart';
 import '../../../../core/widgets/pdf_preview_dialog.dart';
 import '../widgets/buscar_producto_dialog.dart';
@@ -1029,9 +1030,7 @@ class _RegistrarVentaScreenState extends ConsumerState<RegistrarVentaScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      final mensaje = e is TimeoutException
-          ? 'No se pudo guardar: se agotó el tiempo de espera. Revisá la conexión a internet.'
-          : 'No se pudo guardar: $e';
+      final mensaje = 'No se pudo guardar: ${mensajeErrorGuardado(e)}';
       // Esta venta NO quedó registrada en la base de datos: aviso fuerte y
       // persistente (no se cierra solo) con la opción de reintentar sin
       // tener que volver a cargar todo.

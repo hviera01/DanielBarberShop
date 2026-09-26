@@ -14,6 +14,7 @@ import '../../../proveedores/data/proveedor_model.dart';
 import '../../../proveedores/providers/proveedores_provider.dart';
 import '../../../../core/providers/tabs_provider.dart';
 import '../../../../core/utils/formato_moneda.dart';
+import '../../../../core/utils/mensaje_error_guardado.dart';
 import '../../../ventas/presentation/widgets/teclado_numerico_dialog.dart';
 import '../widgets/buscar_producto_compra_dialog.dart';
 import '../../../productos/presentation/widgets/producto_form_dialog.dart';
@@ -349,9 +350,7 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
       _limpiarTodo();
       _mostrarMensaje('Compra registrada: ${compra.numeroDocumento}');
     } catch (e) {
-      _mostrarMensaje(e is TimeoutException
-          ? 'No se pudo guardar: se agotó el tiempo de espera. Revisá la conexión a internet e intentá de nuevo.'
-          : 'Error al registrar: $e');
+      _mostrarMensaje('No se pudo guardar: ${mensajeErrorGuardado(e)}');
     } finally {
       if (mounted) setState(() => _guardando = false);
     }
