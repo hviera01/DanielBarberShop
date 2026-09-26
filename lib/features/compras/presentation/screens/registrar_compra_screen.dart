@@ -15,6 +15,7 @@ import '../../../proveedores/providers/proveedores_provider.dart';
 import '../../../../core/providers/tabs_provider.dart';
 import '../../../../core/utils/formato_moneda.dart';
 import '../../../../core/utils/mensaje_error_guardado.dart';
+import '../../../../core/widgets/exito_transaccion_overlay.dart';
 import '../../../ventas/presentation/widgets/teclado_numerico_dialog.dart';
 import '../widgets/buscar_producto_compra_dialog.dart';
 import '../../../productos/presentation/widgets/producto_form_dialog.dart';
@@ -349,6 +350,7 @@ class _RegistrarCompraScreenState extends ConsumerState<RegistrarCompraScreen> {
       if (!mounted) return;
       _limpiarTodo();
       _mostrarMensaje('Compra registrada: ${compra.numeroDocumento}');
+      mostrarExitoTransaccion(context);
     } catch (e) {
       _mostrarMensaje('No se pudo guardar: ${mensajeErrorGuardado(e)}');
     } finally {
