@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/services/guardado_segundo_plano.dart';
 import '../../data/producto_model.dart';
 import '../../providers/productos_provider.dart';
 import '../../../auth/providers/auth_provider.dart';
@@ -46,28 +47,28 @@ class _AjusteStockDialogState extends ConsumerState<AjusteStockDialog> {
       setState(() => _error = 'Ingresá un número válido');
       return;
     }
-    setState(() {
-      _guardando = true;
-      _error = null;
-    });
-    try {
-      final usuario = ref.read(authProvider).usuario;
-      final costoUnitario = _esIncremento ? double.tryParse(_costoController.text.replaceAll(',', '').trim()) : null;
-      await ref.read(productoRepositoryProvider).ajustarStock(
-        id: widget.producto.id,
-        stockActual: widget.producto.stock,
+    // Guardado optimista (ver guardarEnSegundoPlano). Sin reintento
+    // automático: repetir un ajuste que sí se había guardado duplicaría su
+    // renglón en el historial y su lote; si falla, el aviso ofrece
+    // Reintentar a mano.
+    final usuario = ref.read(authProvider).usuario;
+    final costoUnitario = _esIncremento ? double.tryParse(_costoController.text.replaceAll(',', '').trim()) : null;
+    final repo = ref.read(productoRepositoryProvider);
+    final producto = widget.producto;
+    final motivo = _motivoController.text.trim();
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'el ajuste de stock de "${producto.nombre}"',
+      accion: (_) => repo.ajustarStock(
+        id: producto.id,
+        stockActual: producto.stock,
         stockNuevo: nuevoStock,
         usuario: usuario?.nombreCompleto ?? 'Sistema',
-        motivo: _motivoController.text.trim(),
+        motivo: motivo,
         costoUnitario: costoUnitario,
-      );
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
-    }
+      ),
+    );
+    Navigator.pop(context);
   }
 
   @override

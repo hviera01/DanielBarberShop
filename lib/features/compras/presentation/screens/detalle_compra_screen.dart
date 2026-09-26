@@ -6,6 +6,7 @@ import '../../data/compra_model.dart';
 import '../../providers/compras_provider.dart';
 import '../../../auth/providers/auth_provider.dart';
 import '../../../../core/utils/formato_moneda.dart';
+import '../../../../core/services/guardado_segundo_plano.dart';
 
 /// Pantalla de consulta de una compra ya registrada: buscá por número de
 /// documento (o abrila directo desde Compras a Crédito pasando
@@ -56,7 +57,7 @@ class _DetalleCompraScreenState extends ConsumerState<DetalleCompraScreen> {
       _error = null;
     });
     try {
-      final compra = await ref.read(compraRepositoryProvider).obtenerCompraPorId(id);
+      final compra = await ref.read(compraRepositoryProvider).obtenerCompraPorId(id).timeout(const Duration(seconds: 20));
       if (!mounted) return;
       if (compra == null) {
         setState(() => _error = 'No se encontró la compra');
@@ -149,22 +150,28 @@ class _DetalleCompraScreenState extends ConsumerState<DetalleCompraScreen> {
     );
     if (confirmar != true || !mounted) return;
 
-    setState(() => _anulando = true);
-    try {
-      final usuario = ref.read(authProvider).usuario?.nombreCompleto ?? '';
-      await ref.read(compraRepositoryProvider).anularCompra(id: compra.id, usuario: usuario, motivo: motivoController.text.trim());
-      if (!mounted) return;
-      await _buscarPorId(compra.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Compra anulada correctamente')));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))));
-      }
-    } finally {
-      if (mounted) setState(() => _anulando = false);
-    }
+    // Optimista, igual que anular una venta (ver DetalleVentaScreen._anular).
+    final usuario = ref.read(authProvider).usuario?.nombreCompleto ?? '';
+    final motivo = motivoController.text.trim();
+    final repo = ref.read(compraRepositoryProvider);
+    setState(() => _compra = compra.copyWith(estado: 'Anulada', usuarioAnulacion: usuario, motivoAnulacion: motivo, fechaAnulacion: DateTime.now()));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Compra anulada correctamente')));
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'anulación de la compra ${compra.numeroDocumento}',
+      idempotente: true,
+      accion: (intento) async {
+        try {
+          await repo.anularCompra(id: compra.id, usuario: usuario, motivo: motivo);
+        } on Exception catch (e) {
+          if (intento > 1 && e.toString().contains('ya está anulada')) return;
+          rethrow;
+        }
+      },
+      alFallar: () {
+        if (mounted && _compra?.id == compra.id) setState(() => _compra = compra);
+      },
+    );
   }
 
   @override

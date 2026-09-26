@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/services/guardado_segundo_plano.dart';
 import '../../data/barbero_model.dart';
 import '../../providers/barberos_provider.dart';
 
@@ -62,41 +63,23 @@ class _BarberoFormDialogState extends ConsumerState<BarberoFormDialog> {
       setState(() => _error = 'El % de comisión debe estar entre 0 y 100');
       return;
     }
-    setState(() {
-      _guardando = true;
-      _error = null;
-    });
-    try {
-      final repo = ref.read(barberoRepositoryProvider);
-      if (widget.barbero == null) {
-        await repo.crear(
-          documento: _documentoController.text.trim(),
-          nombreCompleto: nombre,
-          telefono: _telefonoController.text.trim(),
-          especialidad: _especialidadController.text.trim(),
-          porcentajeComision: comision,
-          notas: _notasController.text.trim(),
-          estado: _activo,
-        );
-      } else {
-        await repo.actualizar(
-          id: widget.barbero!.id,
-          documento: _documentoController.text.trim(),
-          nombreCompleto: nombre,
-          telefono: _telefonoController.text.trim(),
-          especialidad: _especialidadController.text.trim(),
-          porcentajeComision: comision,
-          notas: _notasController.text.trim(),
-          estado: _activo,
-        );
-      }
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
-    }
+    // Guardado optimista (ver guardarEnSegundoPlano): se cierra al instante.
+    final repo = ref.read(barberoRepositoryProvider);
+    final idExistente = widget.barbero?.id;
+    final documento = _documentoController.text.trim();
+    final telefono = _telefonoController.text.trim();
+    final especialidad = _especialidadController.text.trim();
+    final notas = _notasController.text.trim();
+    final activo = _activo;
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'el barbero "$nombre"',
+      idempotente: idExistente != null,
+      accion: (_) => idExistente == null
+          ? repo.crear(documento: documento, nombreCompleto: nombre, telefono: telefono, especialidad: especialidad, porcentajeComision: comision, notas: notas, estado: activo)
+          : repo.actualizar(id: idExistente, documento: documento, nombreCompleto: nombre, telefono: telefono, especialidad: especialidad, porcentajeComision: comision, notas: notas, estado: activo),
+    );
+    Navigator.pop(context);
   }
 
   Future<void> _eliminar() async {
@@ -116,17 +99,16 @@ class _BarberoFormDialogState extends ConsumerState<BarberoFormDialog> {
         ],
       ),
     );
-    if (confirmar != true) return;
-    setState(() => _guardando = true);
-    try {
-      await ref.read(barberoRepositoryProvider).eliminar(widget.barbero!.id);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
-    }
+    if (confirmar != true || !mounted) return;
+    final repo = ref.read(barberoRepositoryProvider);
+    final id = widget.barbero!.id;
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'la eliminación del barbero "${widget.barbero!.nombreCompleto}"',
+      idempotente: true,
+      accion: (_) => repo.eliminar(id),
+    );
+    Navigator.pop(context);
   }
 
   InputDecoration _decoracion(String label) {

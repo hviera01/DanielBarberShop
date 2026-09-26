@@ -7,7 +7,7 @@ import '../../data/producto_model.dart';
 import '../../providers/productos_provider.dart';
 import '../../../categorias/providers/categorias_provider.dart';
 import '../../../../core/widgets/barcode_scanner_screen.dart';
-import '../../../../core/widgets/reintentar_dialog.dart';
+import '../../../../core/services/guardado_segundo_plano.dart';
 import '../../../../core/services/firebase_storage_service.dart';
 import '../../../../core/widgets/imagen_producto_network.dart';
 
@@ -142,69 +142,89 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
       setState(() => _error = 'Seleccioná una categoría');
       return;
     }
-    setState(() {
-      _guardando = true;
-      _error = null;
-    });
+    // Guardado optimista: el formulario se cierra al instante y el guardado
+    // real corre en segundo plano (reintentándose solo si la conexión falla;
+    // si al final no se pudo, avisa con opción de reintentar). Ver
+    // guardarEnSegundoPlano.
     final repo = ref.read(productoRepositoryProvider);
+    final codigo = _codigoController.text;
+    final codigoBarras = _codigoBarrasController.text;
+    final descripcion = _descripcionController.text;
+    final idCategoria = _idCategoria!;
+    final precioCompra = _parseDouble(_precioCompraController.text);
+    final precioVenta = _parseDouble(_precioVentaController.text);
+    final precioVenta2 = _parseDouble(_precioVenta2Controller.text);
+    final precioVenta3 = _parseDouble(_precioVenta3Controller.text);
+    final estado = _activo;
+    final esServicio = _esServicio;
+    final imagenUrl = _imagenUrl;
+
     if (widget.producto == null) {
-      final creado = await ejecutarConReintento(
-        context,
-        () => repo
-            .crear(
-              codigo: _codigoController.text,
-              codigoBarras: _codigoBarrasController.text,
-              nombre: nombre,
-              descripcion: _descripcionController.text,
-              idCategoria: _idCategoria!,
-              stock: _esServicio ? 0 : _parseDouble(_stockController.text),
-              precioCompra: _parseDouble(_precioCompraController.text),
-              precioVenta: _parseDouble(_precioVentaController.text),
-              precioVenta2: _parseDouble(_precioVenta2Controller.text),
-              precioVenta3: _parseDouble(_precioVenta3Controller.text),
-              estado: _activo,
-              esServicio: _esServicio,
-              imagenUrl: _imagenUrl,
-            )
-            .timeout(const Duration(seconds: 12)),
+      final id = repo.nuevoId();
+      final codigoFinal = repo.codigoFinal(codigo);
+      final stock = esServicio ? 0.0 : _parseDouble(_stockController.text);
+      final nuevo = ProductoModel(
+        id: id,
+        codigo: codigoFinal,
+        codigoBarras: codigoBarras.trim(),
+        nombre: nombre,
+        descripcion: descripcion.trim(),
+        idCategoria: idCategoria,
+        stock: stock,
+        precioCompra: precioCompra,
+        precioVenta: precioVenta,
+        precioVenta2: precioVenta2,
+        precioVenta3: precioVenta3,
+        estado: estado,
+        esServicio: esServicio,
+        imagenUrl: imagenUrl,
       );
-      if (!mounted) return;
-      if (creado == null) {
-        setState(() => _guardando = false);
-        return;
-      }
-      Navigator.pop(context, creado);
+      guardarEnSegundoPlano(
+        context,
+        descripcion: 'el producto "$nombre"',
+        idempotente: true,
+        accion: (_) => repo.crear(
+          id: id,
+          codigo: codigoFinal,
+          codigoBarras: codigoBarras,
+          nombre: nombre,
+          descripcion: descripcion,
+          idCategoria: idCategoria,
+          stock: stock,
+          precioCompra: precioCompra,
+          precioVenta: precioVenta,
+          precioVenta2: precioVenta2,
+          precioVenta3: precioVenta3,
+          estado: estado,
+          esServicio: esServicio,
+          imagenUrl: imagenUrl,
+        ),
+      );
+      Navigator.pop(context, nuevo);
       return;
     }
 
-    final ok = await ejecutarConReintento<bool>(
+    final idProducto = widget.producto!.id;
+    guardarEnSegundoPlano(
       context,
-      () async {
-        await repo
-            .actualizar(
-              id: widget.producto!.id,
-              codigo: _codigoController.text,
-              codigoBarras: _codigoBarrasController.text,
-              nombre: nombre,
-              descripcion: _descripcionController.text,
-              idCategoria: _idCategoria!,
-              precioCompra: _parseDouble(_precioCompraController.text),
-              precioVenta: _parseDouble(_precioVentaController.text),
-              precioVenta2: _parseDouble(_precioVenta2Controller.text),
-              precioVenta3: _parseDouble(_precioVenta3Controller.text),
-              estado: _activo,
-              esServicio: _esServicio,
-              imagenUrl: _imagenUrl,
-            )
-            .timeout(const Duration(seconds: 12));
-        return true;
-      },
+      descripcion: 'los cambios de "$nombre"',
+      idempotente: true,
+      accion: (_) => repo.actualizar(
+        id: idProducto,
+        codigo: codigo,
+        codigoBarras: codigoBarras,
+        nombre: nombre,
+        descripcion: descripcion,
+        idCategoria: idCategoria,
+        precioCompra: precioCompra,
+        precioVenta: precioVenta,
+        precioVenta2: precioVenta2,
+        precioVenta3: precioVenta3,
+        estado: estado,
+        esServicio: esServicio,
+        imagenUrl: imagenUrl,
+      ),
     );
-    if (!mounted) return;
-    if (ok != true) {
-      setState(() => _guardando = false);
-      return;
-    }
     Navigator.pop(context);
   }
 
@@ -226,17 +246,16 @@ class _ProductoFormDialogState extends ConsumerState<ProductoFormDialog> {
       ),
     );
     if (confirmar != true || !mounted) return;
-    setState(() => _guardando = true);
-    final ok = await ejecutarConReintento<bool>(context, () async {
-      await ref.read(productoRepositoryProvider).eliminar(widget.producto!.id).timeout(const Duration(seconds: 12));
-      return true;
-    });
-    if (!mounted) return;
-    if (ok == true) {
-      Navigator.pop(context);
-    } else {
-      setState(() => _guardando = false);
-    }
+    final repo = ref.read(productoRepositoryProvider);
+    final id = widget.producto!.id;
+    final nombre = widget.producto!.nombre;
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'la eliminación de "$nombre"',
+      idempotente: true,
+      accion: (_) => repo.eliminar(id),
+    );
+    Navigator.pop(context);
   }
 
   InputDecoration _decoracion(String label) {

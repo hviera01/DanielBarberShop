@@ -27,5 +27,5 @@ String mensajeErrorGuardado(Object e) {
         return '${real.code}${real.message == null ? '' : ': ${real.message}'}';
     }
   }
-  return '$real';
+  return '$real'.replaceFirst('Exception: ', '');
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/services/guardado_segundo_plano.dart';
 import '../../data/color_model.dart';
 import '../../providers/colores_provider.dart';
 
@@ -71,41 +72,24 @@ class _ColorFormDialogState extends ConsumerState<ColorFormDialog> {
       setState(() => _error = 'El cliente es obligatorio');
       return;
     }
-    setState(() {
-      _guardando = true;
-      _error = null;
-    });
-    try {
-      final repo = ref.read(colorRepositoryProvider);
-      if (widget.color == null) {
-        await repo.crear(
-          codigo: _codigoController.text.trim(),
-          cliente: cliente,
-          descripcion: _descripcionController.text.trim(),
-          ubicacionFisica: _ubicacionController.text.trim(),
-          pagina: _paginaController.text.trim(),
-          fechaRegistro: _fechaRegistro,
-          observaciones: _observacionesController.text.trim(),
-        );
-      } else {
-        await repo.actualizar(
-          id: widget.color!.id,
-          codigo: _codigoController.text.trim(),
-          cliente: cliente,
-          descripcion: _descripcionController.text.trim(),
-          ubicacionFisica: _ubicacionController.text.trim(),
-          pagina: _paginaController.text.trim(),
-          fechaRegistro: _fechaRegistro,
-          observaciones: _observacionesController.text.trim(),
-        );
-      }
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
-    }
+    // Guardado optimista (ver guardarEnSegundoPlano): se cierra al instante.
+    final repo = ref.read(colorRepositoryProvider);
+    final idExistente = widget.color?.id;
+    final codigo = _codigoController.text.trim();
+    final descripcion = _descripcionController.text.trim();
+    final ubicacion = _ubicacionController.text.trim();
+    final pagina = _paginaController.text.trim();
+    final fecha = _fechaRegistro;
+    final observaciones = _observacionesController.text.trim();
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'el color de "$cliente"',
+      idempotente: idExistente != null,
+      accion: (_) => idExistente == null
+          ? repo.crear(codigo: codigo, cliente: cliente, descripcion: descripcion, ubicacionFisica: ubicacion, pagina: pagina, fechaRegistro: fecha, observaciones: observaciones)
+          : repo.actualizar(id: idExistente, codigo: codigo, cliente: cliente, descripcion: descripcion, ubicacionFisica: ubicacion, pagina: pagina, fechaRegistro: fecha, observaciones: observaciones),
+    );
+    Navigator.pop(context);
   }
 
   Future<void> _eliminar() async {
@@ -125,17 +109,16 @@ class _ColorFormDialogState extends ConsumerState<ColorFormDialog> {
         ],
       ),
     );
-    if (confirmar != true) return;
-    setState(() => _guardando = true);
-    try {
-      await ref.read(colorRepositoryProvider).eliminar(widget.color!.id);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
-    }
+    if (confirmar != true || !mounted) return;
+    final repo = ref.read(colorRepositoryProvider);
+    final id = widget.color!.id;
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'la eliminación del color',
+      idempotente: true,
+      accion: (_) => repo.eliminar(id),
+    );
+    Navigator.pop(context);
   }
 
   InputDecoration _decoracion(String label) {

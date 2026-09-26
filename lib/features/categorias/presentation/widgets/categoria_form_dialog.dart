@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/services/guardado_segundo_plano.dart';
 import '../../data/categoria_model.dart';
 import '../../providers/categorias_provider.dart';
 
@@ -42,24 +43,20 @@ class _CategoriaFormDialogState extends ConsumerState<CategoriaFormDialog> {
       setState(() => _error = 'La descripción es obligatoria');
       return;
     }
-    setState(() {
-      _guardando = true;
-      _error = null;
-    });
-    try {
-      final repo = ref.read(categoriaRepositoryProvider);
-      if (widget.categoria == null) {
-        await repo.crear(descripcion, _activo, controlaStock: _controlaStock);
-      } else {
-        await repo.actualizar(widget.categoria!.id, descripcion, _activo, controlaStock: _controlaStock);
-      }
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
-    }
+    // Guardado optimista (ver guardarEnSegundoPlano): se cierra al instante.
+    final repo = ref.read(categoriaRepositoryProvider);
+    final idExistente = widget.categoria?.id;
+    final activo = _activo;
+    final controlaStock = _controlaStock;
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'la categoría "$descripcion"',
+      idempotente: idExistente != null,
+      accion: (_) => idExistente == null
+          ? repo.crear(descripcion, activo, controlaStock: controlaStock)
+          : repo.actualizar(idExistente, descripcion, activo, controlaStock: controlaStock),
+    );
+    Navigator.pop(context);
   }
 
   Future<void> _eliminar() async {
@@ -79,17 +76,16 @@ class _CategoriaFormDialogState extends ConsumerState<CategoriaFormDialog> {
         ],
       ),
     );
-    if (confirmar != true) return;
-    setState(() => _guardando = true);
-    try {
-      await ref.read(categoriaRepositoryProvider).eliminar(widget.categoria!.id);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
-    }
+    if (confirmar != true || !mounted) return;
+    final repo = ref.read(categoriaRepositoryProvider);
+    final id = widget.categoria!.id;
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'la eliminación de la categoría "${widget.categoria!.descripcion}"',
+      idempotente: true,
+      accion: (_) => repo.eliminar(id),
+    );
+    Navigator.pop(context);
   }
 
   @override

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'venta_model.dart';
 import 'venta_en_espera_model.dart';
@@ -347,7 +348,7 @@ class VentaRepository {
   /// Detalle de Venta nunca quede sin poder buscar.
   Future<VentaModel?> obtenerVentaPorId(String id) async {
     try {
-      final resultado = await FuncionesNube.llamar('ventaPorId', {'id': id});
+      final resultado = await FuncionesNube.llamar('ventaPorId', {'id': id}, timeout: const Duration(seconds: 8));
       final venta = (resultado as Map<String, dynamic>)['venta'];
       return venta == null ? null : _ventaDesdeJsonCrudo(venta as Map<String, dynamic>);
     } catch (_) {
@@ -445,12 +446,36 @@ class VentaRepository {
   /// Anula una venta: la marca como 'Anulada', repone al inventario el stock
   /// de los productos que no fueron reembasados, y si era una venta a
   /// crédito sin abonos, elimina su registro en `ventasCredito`.
+  ///
+  /// Con tope de tiempo: ninguna anulación puede quedar cargando para
+  /// siempre. En web el SDK de Firestore ignora el `timeout` de las
+  /// transacciones y las lecturas simples no tienen ninguno, así que si la
+  /// conexión se traba el spinner quedaba eterno. Si vence el tiempo, la
+  /// anulación puede haberse completado igual: la pantalla vuelve a leer la
+  /// venta para mostrar el estado real.
   Future<void> anularVenta({
     required String id,
     required String usuario,
     String motivo = '',
+  }) {
+    return _anularVentaSinLimite(id: id, usuario: usuario, motivo: motivo).timeout(
+      const Duration(seconds: 20),
+      onTimeout: () => throw TimeoutException('anularVenta'),
+    );
+  }
+
+  Future<void> _anularVentaSinLimite({
+    required String id,
+    required String usuario,
+    String motivo = '',
   }) async {
-    final ventaSnap = await _colVentas.doc(id).get();
+    // Las tres lecturas no dependen entre sí (el id ya se conoce): juntas
+    // cuestan una sola ida y vuelta en vez de dos o tres seguidas.
+    final (ventaSnap, detalleSnap, creditoSnap) = await (
+      _colVentas.doc(id).get(),
+      _colVentas.doc(id).collection('detalle').get(),
+      _colVentasCredito.doc(id).get(),
+    ).wait;
     if (!ventaSnap.exists) {
       throw Exception('No se encontró la venta');
     }
@@ -461,12 +486,10 @@ class VentaRepository {
     final condicion = data['condicion'] as String? ?? '';
     final numeroDocumento = data['numeroDocumento'] as String? ?? '';
 
-    final detalleSnap = await _colVentas.doc(id).collection('detalle').get();
     final items = detalleSnap.docs.map((d) => ItemVentaModel.fromMap(d.data())).toList();
 
     var creditoExiste = false;
     if (condicion == 'Credito') {
-      final creditoSnap = await _colVentasCredito.doc(id).get();
       if (creditoSnap.exists) {
         creditoExiste = true;
         final montoTotal = ((creditoSnap.data()?['montoTotal'] ?? 0) as num).toDouble();

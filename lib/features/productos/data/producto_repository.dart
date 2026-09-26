@@ -29,6 +29,14 @@ class ProductoRepository {
     return 'PROD-${ahora.substring(ahora.length - 8)}';
   }
 
+  /// Id de un producto que todavía no se guardó: permite mostrarlo (y usarlo
+  /// en una venta) al instante, mientras el guardado real corre en segundo
+  /// plano y se puede repetir sin duplicarlo.
+  String nuevoId() => _col.doc().id;
+
+  /// El código que va a quedar guardado: el escrito, o uno generado.
+  String codigoFinal(String codigo) => codigo.trim().isEmpty ? _generarCodigo() : codigo.trim();
+
   Future<ProductoModel> crear({
     required String codigo,
     required String codigoBarras,
@@ -43,17 +51,21 @@ class ProductoRepository {
     required bool estado,
     bool esServicio = false,
     String imagenUrl = '',
+    // Con un id fijo (ver nuevoId) la creación se puede repetir sin
+    // duplicar el producto: es el mismo documento, no uno nuevo por intento.
+    String? id,
   }) async {
     var codigoFinal = codigo.trim();
+    final ref = id == null ? _col.doc() : _col.doc(id);
     if (codigoFinal.isEmpty) {
       codigoFinal = _generarCodigo();
     } else {
-      final existe = await _col.where('codigo', isEqualTo: codigoFinal).limit(1).get();
-      if (existe.docs.isNotEmpty) {
+      final existe = await _col.where('codigo', isEqualTo: codigoFinal).limit(2).get();
+      if (existe.docs.any((d) => d.id != ref.id)) {
         throw Exception('Ya existe un producto con ese código');
       }
     }
-    final ref = await _col.add({
+    await ref.set({
       'codigo': codigoFinal,
       'codigoBarras': codigoBarras.trim(),
       'nombre': nombre.trim(),
@@ -75,7 +87,7 @@ class ProductoRepository {
     // en el momento de la venta (que puede ya haber cambiado por una compra
     // posterior) en vez del costo real de esa existencia inicial.
     if (stock > 0) {
-      await ref.collection('lotes').add({
+      await ref.collection('lotes').doc('inicial').set({
         'cantidadOriginal': stock,
         'cantidadRestante': stock,
         'costoUnitario': precioCompra,

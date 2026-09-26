@@ -69,7 +69,13 @@ class VentaModel {
   // detalle, ver VentaRepository.obtenerVentasConSolicitudImpresionEnVivo)
   // sin tener que releer el documento completo de nuevo — para que la
   // impresión remota en vivo tarde lo menos posible, ver AppShell.
-  VentaModel copyWith({List<ItemVentaModel>? detalle}) {
+  VentaModel copyWith({
+    List<ItemVentaModel>? detalle,
+    String? estado,
+    String? usuarioAnulacion,
+    String? motivoAnulacion,
+    DateTime? fechaAnulacion,
+  }) {
     return VentaModel(
       id: id,
       tipoDocumento: tipoDocumento,
@@ -85,7 +91,7 @@ class VentaModel {
       condicion: condicion,
       fechaVencimiento: fechaVencimiento,
       fechaRegistro: fechaRegistro,
-      estado: estado,
+      estado: estado ?? this.estado,
       usuarioRegistro: usuarioRegistro,
       cantidadProductos: cantidadProductos,
       oc: oc,
@@ -94,9 +100,9 @@ class VentaModel {
       descuentoGlobal: descuentoGlobal,
       detalle: detalle ?? this.detalle,
       pagosMixtos: pagosMixtos,
-      usuarioAnulacion: usuarioAnulacion,
-      motivoAnulacion: motivoAnulacion,
-      fechaAnulacion: fechaAnulacion,
+      usuarioAnulacion: usuarioAnulacion ?? this.usuarioAnulacion,
+      motivoAnulacion: motivoAnulacion ?? this.motivoAnulacion,
+      fechaAnulacion: fechaAnulacion ?? this.fechaAnulacion,
       pendienteImpresion: pendienteImpresion,
       solicitudImpresionEnVivo: solicitudImpresionEnVivo,
       solicitudImpresionEsCopia: solicitudImpresionEsCopia,

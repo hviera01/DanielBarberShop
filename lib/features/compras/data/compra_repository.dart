@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'compra_model.dart';
 import 'item_compra_model.dart';
@@ -203,7 +204,7 @@ class CompraRepository {
   /// Si la función no responde, cae al camino directo de siempre.
   Future<CompraModel?> obtenerCompraPorId(String id) async {
     try {
-      final resultado = await FuncionesNube.llamar('compraPorId', {'id': id});
+      final resultado = await FuncionesNube.llamar('compraPorId', {'id': id}, timeout: const Duration(seconds: 8));
       final compra = (resultado as Map<String, dynamic>)['compra'];
       return compra == null ? null : _compraDesdeJsonCrudo(compra as Map<String, dynamic>);
     } catch (_) {
@@ -263,12 +264,31 @@ class CompraRepository {
   /// Anula una compra: la marca como 'Anulada', descuenta del inventario el
   /// stock que había sumado, y si era una compra a crédito sin abonos,
   /// elimina su registro en `comprasCredito`.
+  ///
+  /// Con tope de tiempo (ver VentaRepository.anularVenta): ninguna anulación
+  /// puede quedar cargando para siempre. Si vence, pudo haberse completado
+  /// igual, así que la pantalla vuelve a leer la compra.
   Future<void> anularCompra({
     required String id,
     required String usuario,
     String motivo = '',
+  }) {
+    return _anularCompraSinLimite(id: id, usuario: usuario, motivo: motivo).timeout(
+      const Duration(seconds: 20),
+      onTimeout: () => throw TimeoutException('anularCompra'),
+    );
+  }
+
+  Future<void> _anularCompraSinLimite({
+    required String id,
+    required String usuario,
+    String motivo = '',
   }) async {
-    final compraSnap = await _colCompras.doc(id).get();
+    final (compraSnap, detalleSnap, creditoSnap) = await (
+      _colCompras.doc(id).get(),
+      _colCompras.doc(id).collection('detalle').get(),
+      _colComprasCredito.doc(id).get(),
+    ).wait;
     if (!compraSnap.exists) {
       throw Exception('No se encontró la compra');
     }
@@ -279,12 +299,10 @@ class CompraRepository {
     final condicion = data['condicion'] as String? ?? '';
     final numeroDocumento = data['numeroDocumento'] as String? ?? '';
 
-    final detalleSnap = await _colCompras.doc(id).collection('detalle').get();
     final items = detalleSnap.docs.map((d) => ItemCompraModel.fromMap(d.data())).toList();
 
     var creditoExiste = false;
     if (condicion == 'Credito') {
-      final creditoSnap = await _colComprasCredito.doc(id).get();
       if (creditoSnap.exists) {
         creditoExiste = true;
         final montoTotal = ((creditoSnap.data()?['montoTotal'] ?? 0) as num).toDouble();
@@ -299,9 +317,11 @@ class CompraRepository {
     // por referencia) el lote que generó esta compra en cada producto, para
     // poder descontarle lo que corresponda al anularla.
     final loteRefPorProducto = <String, DocumentReference<Map<String, dynamic>>>{};
-    for (final item in items) {
-      final query = await _lotes.colLotes(item.idProducto).where('idCompra', isEqualTo: id).limit(1).get();
-      if (query.docs.isNotEmpty) loteRefPorProducto[item.idProducto] = query.docs.first.reference;
+    final queriesLotes = await Future.wait(
+      items.map((item) => _lotes.colLotes(item.idProducto).where('idCompra', isEqualTo: id).limit(1).get()),
+    );
+    for (var i = 0; i < items.length; i++) {
+      if (queriesLotes[i].docs.isNotEmpty) loteRefPorProducto[items[i].idProducto] = queriesLotes[i].docs.first.reference;
     }
 
     await _db.runTransaction((transaction) async {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/services/guardado_segundo_plano.dart';
 import '../../data/proveedor_model.dart';
 import '../../providers/proveedores_provider.dart';
 
@@ -50,37 +51,22 @@ class _ProveedorFormDialogState extends ConsumerState<ProveedorFormDialog> {
       setState(() => _error = 'La razón social es obligatoria');
       return;
     }
-    setState(() {
-      _guardando = true;
-      _error = null;
-    });
-    try {
-      final repo = ref.read(proveedorRepositoryProvider);
-      if (widget.proveedor == null) {
-        await repo.crear(
-          rtn: _rtnController.text.trim(),
-          razonSocial: razonSocial,
-          correo: _correoController.text.trim(),
-          telefono: _telefonoController.text.trim(),
-          estado: _activo,
-        );
-      } else {
-        await repo.actualizar(
-          id: widget.proveedor!.id,
-          rtn: _rtnController.text.trim(),
-          razonSocial: razonSocial,
-          correo: _correoController.text.trim(),
-          telefono: _telefonoController.text.trim(),
-          estado: _activo,
-        );
-      }
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
-    }
+    // Guardado optimista (ver guardarEnSegundoPlano): se cierra al instante.
+    final repo = ref.read(proveedorRepositoryProvider);
+    final idExistente = widget.proveedor?.id;
+    final rtn = _rtnController.text.trim();
+    final correo = _correoController.text.trim();
+    final telefono = _telefonoController.text.trim();
+    final activo = _activo;
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'el proveedor "$razonSocial"',
+      idempotente: idExistente != null,
+      accion: (_) => idExistente == null
+          ? repo.crear(rtn: rtn, razonSocial: razonSocial, correo: correo, telefono: telefono, estado: activo)
+          : repo.actualizar(id: idExistente, rtn: rtn, razonSocial: razonSocial, correo: correo, telefono: telefono, estado: activo),
+    );
+    Navigator.pop(context);
   }
 
   Future<void> _eliminar() async {
@@ -100,17 +86,16 @@ class _ProveedorFormDialogState extends ConsumerState<ProveedorFormDialog> {
         ],
       ),
     );
-    if (confirmar != true) return;
-    setState(() => _guardando = true);
-    try {
-      await ref.read(proveedorRepositoryProvider).eliminar(widget.proveedor!.id);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
-    }
+    if (confirmar != true || !mounted) return;
+    final repo = ref.read(proveedorRepositoryProvider);
+    final id = widget.proveedor!.id;
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'la eliminación del proveedor "${widget.proveedor!.razonSocial}"',
+      idempotente: true,
+      accion: (_) => repo.eliminar(id),
+    );
+    Navigator.pop(context);
   }
 
   InputDecoration _decoracion(String label) {

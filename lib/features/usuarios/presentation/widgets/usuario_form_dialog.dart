@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/services/guardado_segundo_plano.dart';
 import '../../data/usuario_model.dart';
 import '../../providers/usuarios_provider.dart';
 import '../../../../core/constants/roles.dart';
@@ -67,25 +68,21 @@ class _UsuarioFormDialogState extends ConsumerState<UsuarioFormDialog> {
       setState(() => _error = 'Elegí a qué barbero corresponde este usuario');
       return;
     }
-    setState(() {
-      _guardando = true;
-      _error = null;
-    });
-    try {
-      final repo = ref.read(usuarioRepositoryProvider);
-      final idBarbero = _rol == Roles.barbero ? (_idBarbero ?? '') : '';
-      if (!editando) {
-        await repo.crear(documento, nombre, correo, clave, _rol, _activo, idBarbero: idBarbero);
-      } else {
-        await repo.actualizar(widget.usuario!.id, documento, nombre, correo, _rol, _activo, idBarbero: idBarbero, clave: clave.isEmpty ? null : clave);
-      }
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
-    }
+    // Guardado optimista (ver guardarEnSegundoPlano): se cierra al instante.
+    final repo = ref.read(usuarioRepositoryProvider);
+    final idBarbero = _rol == Roles.barbero ? (_idBarbero ?? '') : '';
+    final idExistente = widget.usuario?.id;
+    final rol = _rol;
+    final activo = _activo;
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'el usuario "$nombre"',
+      idempotente: idExistente != null,
+      accion: (_) => idExistente == null
+          ? repo.crear(documento, nombre, correo, clave, rol, activo, idBarbero: idBarbero)
+          : repo.actualizar(idExistente, documento, nombre, correo, rol, activo, idBarbero: idBarbero, clave: clave.isEmpty ? null : clave),
+    );
+    Navigator.pop(context);
   }
 
   Future<void> _eliminar() async {
@@ -105,17 +102,16 @@ class _UsuarioFormDialogState extends ConsumerState<UsuarioFormDialog> {
         ],
       ),
     );
-    if (confirmar != true) return;
-    setState(() => _guardando = true);
-    try {
-      await ref.read(usuarioRepositoryProvider).eliminar(widget.usuario!.id);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
-    }
+    if (confirmar != true || !mounted) return;
+    final repo = ref.read(usuarioRepositoryProvider);
+    final id = widget.usuario!.id;
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'la eliminación del usuario "${widget.usuario!.nombreCompleto}"',
+      idempotente: true,
+      accion: (_) => repo.eliminar(id),
+    );
+    Navigator.pop(context);
   }
 
   InputDecoration _decoracion(String label) {

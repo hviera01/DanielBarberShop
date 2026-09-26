@@ -58,6 +58,36 @@ class CompraModel {
     this.fechaAnulacion,
   });
 
+  CompraModel copyWith({String? estado, String? usuarioAnulacion, String? motivoAnulacion, DateTime? fechaAnulacion}) {
+    return CompraModel(
+      id: id,
+      tipoDocumento: tipoDocumento,
+      numeroDocumento: numeroDocumento,
+      noFactura: noFactura,
+      idProveedor: idProveedor,
+      documentoProveedor: documentoProveedor,
+      razonSocial: razonSocial,
+      condicion: condicion,
+      metodoPago: metodoPago,
+      subtotal: subtotal,
+      descuentoGlobalPorcentaje: descuentoGlobalPorcentaje,
+      descuentoTotalMonto: descuentoTotalMonto,
+      isvPorcentaje: isvPorcentaje,
+      impuesto: impuesto,
+      ajusteManual: ajusteManual,
+      totalAPagar: totalAPagar,
+      fechaRegistro: fechaRegistro,
+      fechaVencimiento: fechaVencimiento,
+      estado: estado ?? this.estado,
+      usuarioRegistro: usuarioRegistro,
+      cantidadProductos: cantidadProductos,
+      detalle: detalle,
+      usuarioAnulacion: usuarioAnulacion ?? this.usuarioAnulacion,
+      motivoAnulacion: motivoAnulacion ?? this.motivoAnulacion,
+      fechaAnulacion: fechaAnulacion ?? this.fechaAnulacion,
+    );
+  }
+
   factory CompraModel.fromMap(String id, Map<String, dynamic> data, List<ItemCompraModel> detalle) {
     return CompraModel(
       id: id,

@@ -19,6 +19,7 @@ import '../../../../core/models/tab_item.dart';
 import '../../../../core/providers/tabs_provider.dart';
 import '../../../../core/services/impresora_red_service.dart';
 import '../../../../core/utils/formato_moneda.dart';
+import '../../../../core/services/guardado_segundo_plano.dart';
 import '../../../../core/utils/pantalla_builder.dart';
 import '../../../../core/widgets/pdf_preview_dialog.dart';
 import '../../../ventas_credito/data/abono_model.dart';
@@ -89,7 +90,7 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
       _error = null;
     });
     try {
-      final venta = await ref.read(ventaRepositoryProvider).obtenerVentaPorId(id);
+      final venta = await ref.read(ventaRepositoryProvider).obtenerVentaPorId(id).timeout(const Duration(seconds: 20));
       if (!mounted) return;
       if (venta == null) {
         setState(() => _error = 'No se encontró la venta');
@@ -423,22 +424,33 @@ class _DetalleVentaScreenState extends ConsumerState<DetalleVentaScreen> {
     );
     if (confirmar != true || !mounted) return;
 
-    setState(() => _anulando = true);
-    try {
-      final usuario = ref.read(authProvider).usuario?.nombreCompleto ?? '';
-      await ref.read(ventaRepositoryProvider).anularVenta(id: venta.id, usuario: usuario, motivo: motivoController.text.trim());
-      if (!mounted) return;
-      await _buscarPorId(venta.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Venta anulada correctamente'), showCloseIcon: true));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('Exception: ', '')), showCloseIcon: true));
-      }
-    } finally {
-      if (mounted) setState(() => _anulando = false);
-    }
+    // Optimista: la venta se ve anulada al instante y la anulación de verdad
+    // (que repone stock, etc.) corre en segundo plano, reintentándose sola si
+    // la conexión falla. Si al final no se pudo, la pantalla vuelve a como
+    // estaba y se avisa (ver guardarEnSegundoPlano).
+    final usuario = ref.read(authProvider).usuario?.nombreCompleto ?? '';
+    final motivo = motivoController.text.trim();
+    final repo = ref.read(ventaRepositoryProvider);
+    setState(() => _venta = venta.copyWith(estado: 'Anulada', usuarioAnulacion: usuario, motivoAnulacion: motivo, fechaAnulacion: DateTime.now()));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Venta anulada correctamente'), showCloseIcon: true));
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'anulación de la venta ${venta.numeroDocumento}',
+      idempotente: true,
+      accion: (intento) async {
+        try {
+          await repo.anularVenta(id: venta.id, usuario: usuario, motivo: motivo);
+        } on Exception catch (e) {
+          // Un intento anterior (que parecía haber fallado por tiempo) pudo
+          // haberse completado igual: entonces ya está hecho.
+          if (intento > 1 && e.toString().contains('ya está anulada')) return;
+          rethrow;
+        }
+      },
+      alFallar: () {
+        if (mounted && _venta?.id == venta.id) setState(() => _venta = venta);
+      },
+    );
   }
 
   @override

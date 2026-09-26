@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/services/guardado_segundo_plano.dart';
 import '../../data/cliente_model.dart';
 import '../../providers/clientes_provider.dart';
 
@@ -50,37 +51,22 @@ class _ClienteFormDialogState extends ConsumerState<ClienteFormDialog> {
       setState(() => _error = 'El nombre completo es obligatorio');
       return;
     }
-    setState(() {
-      _guardando = true;
-      _error = null;
-    });
-    try {
-      final repo = ref.read(clienteRepositoryProvider);
-      if (widget.cliente == null) {
-        await repo.crear(
-          dni: _dniController.text.trim(),
-          nombreCompleto: nombre,
-          correo: _correoController.text.trim(),
-          telefono: _telefonoController.text.trim(),
-          estado: _activo,
-        );
-      } else {
-        await repo.actualizar(
-          id: widget.cliente!.id,
-          dni: _dniController.text.trim(),
-          nombreCompleto: nombre,
-          correo: _correoController.text.trim(),
-          telefono: _telefonoController.text.trim(),
-          estado: _activo,
-        );
-      }
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
-    }
+    // Guardado optimista (ver guardarEnSegundoPlano): se cierra al instante.
+    final repo = ref.read(clienteRepositoryProvider);
+    final idExistente = widget.cliente?.id;
+    final dni = _dniController.text.trim();
+    final correo = _correoController.text.trim();
+    final telefono = _telefonoController.text.trim();
+    final activo = _activo;
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'el cliente "$nombre"',
+      idempotente: idExistente != null,
+      accion: (_) => idExistente == null
+          ? repo.crear(dni: dni, nombreCompleto: nombre, correo: correo, telefono: telefono, estado: activo)
+          : repo.actualizar(id: idExistente, dni: dni, nombreCompleto: nombre, correo: correo, telefono: telefono, estado: activo),
+    );
+    Navigator.pop(context);
   }
 
   Future<void> _eliminar() async {
@@ -100,17 +86,16 @@ class _ClienteFormDialogState extends ConsumerState<ClienteFormDialog> {
         ],
       ),
     );
-    if (confirmar != true) return;
-    setState(() => _guardando = true);
-    try {
-      await ref.read(clienteRepositoryProvider).eliminar(widget.cliente!.id);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _guardando = false;
-      });
-    }
+    if (confirmar != true || !mounted) return;
+    final repo = ref.read(clienteRepositoryProvider);
+    final id = widget.cliente!.id;
+    guardarEnSegundoPlano(
+      context,
+      descripcion: 'la eliminación del cliente "${widget.cliente!.nombreCompleto}"',
+      idempotente: true,
+      accion: (_) => repo.eliminar(id),
+    );
+    Navigator.pop(context);
   }
 
   InputDecoration _decoracion(String label) {
