@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, Tar
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/constants/roles.dart';
 import '../../../auth/providers/auth_provider.dart';
 import '../../../../core/providers/tabs_provider.dart';
 import '../../../../core/models/tab_item.dart';
@@ -103,7 +104,7 @@ class HomeScreen extends ConsumerWidget {
                   const SizedBox(height: 4),
                   Text('Seleccioná una opción para comenzar', style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade600)),
                   const SizedBox(height: 20),
-                  if (_esWebMovil) ...[
+                  if (_esWebMovil && (rol == Roles.administrador || rol == Roles.empleado)) ...[
                     _accesosDirectos(ref),
                     const SizedBox(height: 20),
                   ],
